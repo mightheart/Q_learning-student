@@ -1,2 +1,23 @@
 *.pyc
 /venv/
+/src/__pycache__/
+/.venv/
+/__pycache__/
+
+# 测试和日志
+/tests/__pycache__/
+*.log
+/logs/
+
+# 性能分析
+*.prof
+*.pstats
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 配置文件（可选）
+/config/local_*.json
