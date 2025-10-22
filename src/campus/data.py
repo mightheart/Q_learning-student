@@ -22,108 +22,170 @@ def create_campus_map() -> Graph:
     graph = Graph()
     
     # Define buildings with GUI coordinates (1280x720 window)
+    # GRID LAYOUT: All buildings aligned to facilitate horizontal/vertical paths
+    # Grid spacing: 160 pixels horizontally, 120 pixels vertically
     # Y coordinate: smaller = north (top), larger = south (bottom)
+    # River is at y=300-420, bridges cross from 300 to 420
     buildings_data = [
-        # North Area - Teaching Buildings (河北区域)
+        # North Area - Teaching Buildings (河北区域) - Grid Y=150
         # Northwest block - Teaching Building D (left side)
-        ("D3a", "Room D3a", 120, 120),
-        ("D3b", "Room D3b", 240, 120),
-        ("D3c", "Room D3c", 360, 120),
-        ("D3d", "Room D3d", 480, 120),
-        
-        # North Center - Library
-        ("library", "Library", 640, 100),
+        ("D3a", "Room D3a", 160, 150),
+        ("D3b", "Room D3b", 320, 150),
+        ("D3c", "Room D3c", 480, 150),
+        ("D3d", "Room D3d", 640, 150),
         
         # Northeast block - Teaching Building F (right side)
-        ("F3a", "Room F3a", 800, 120),
-        ("F3b", "Room F3b", 920, 120),
-        ("F3c", "Room F3c", 1040, 120),
-        ("F3d", "Room F3d", 1160, 120),
+        ("F3a", "Room F3a", 800, 150),
+        ("F3b", "Room F3b", 960, 150),
+        ("F3c", "Room F3c", 1120, 150),
         
-        # River Bridges (4 bridges connecting north and south)
-        ("bridge_west", "West Bridge", 200, 360),
-        ("bridge_mid_left", "Mid-Left Bridge", 450, 360),
-        ("bridge_mid_right", "Mid-Right Bridge", 830, 360),
-        ("bridge_east", "East Bridge", 1080, 360),
+        # North Center - Library (Grid Y=230, centered)
+        ("library", "Library", 640, 230),
+        ("F3d", "Room F3d", 1120, 230),
+        
+        # 🌉 Bridge Structure (4 bridges, each with head and end nodes)
+        # Grid Y=300 (north bank) and Y=420 (south bank)
+        # West Bridge (大桥 - Large) - X=160
+        ("bridge_west_head", "West Bridge (N)", 160, 300),
+        ("bridge_west_end", "West Bridge (S)", 160, 420),
+        
+        # Mid-Left Bridge (小桥 - Small) - X=480
+        ("bridge_mid_left_head", "Mid-L Bridge (N)", 480, 300),
+        ("bridge_mid_left_end", "Mid-L Bridge (S)", 480, 420),
+        
+        # Mid-Right Bridge (小桥 - Small) - X=800
+        ("bridge_mid_right_head", "Mid-R Bridge (N)", 800, 300),
+        ("bridge_mid_right_end", "Mid-R Bridge (S)", 800, 420),
+        
+        # East Bridge (大桥 - Large) - X=1120
+        ("bridge_east_head", "East Bridge (N)", 1120, 300),
+        ("bridge_east_end", "East Bridge (S)", 1120, 420),
         
         # South Area - Living Facilities (河南区域)
-        # Southwest - Canteen (larger area)
-        ("canteen", "Canteen", 280, 580),
+        # Southwest - Canteen - Grid Y=520
+        ("canteen", "Canteen", 160, 520),
         
-        # South Center - Sports Area
-        ("gym", "Gym", 640, 560),
-        ("playground", "Playground", 640, 640),
+        # South Center - Sports Area - Grid Y=520, Y=600
+        ("gym", "Gym", 480, 520),
+        ("playground", "Playground", 480, 600),
         
-        # Southeast - Dormitory Buildings (4 dorms)
-        ("D5a", "Dorm D5a", 920, 560),
-        ("D5b", "Dorm D5b", 1040, 560),
-        ("D5c", "Dorm D5c", 920, 640),
-        ("D5d", "Dorm D5d", 1040, 640),
+        # Southeast - Dormitory Buildings (4 dorms) - Grid Y=520, Y=600
+        ("D5a", "Dorm D5a", 800, 520),
+        ("D5b", "Dorm D5b", 960, 520),
+        ("D5c", "Dorm D5c", 800, 600),
+        ("D5d", "Dorm D5d", 960, 600),
     ]
     
     for building_id, name, x, y in buildings_data:
         graph.add_building(Building(building_id=building_id, name=name, x=x, y=y))
     
     # Define paths with realistic distances (in meters)
-    # Format: (start, end, length, difficulty, capacity)
+    # Format: (start, end, length, difficulty, capacity, is_bridge, congestion_factor)
     paths_data = [
         # === North Area Paths (河北区域) ===
         # Teaching Building D - horizontal connections
-        ("D3a", "D3b", 80, 1.0, None),
-        ("D3b", "D3c", 80, 1.0, None),
-        ("D3c", "D3d", 80, 1.0, None),
+        ("D3a", "D3b", 80, 1.0, None, False, 0.0),
+        ("D3b", "D3c", 80, 1.0, None, False, 0.0),
+        ("D3c", "D3d", 80, 1.0, None, False, 0.0),
         
         # Teaching Building F - horizontal connections
-        ("F3a", "F3b", 80, 1.0, None),
-        ("F3b", "F3c", 80, 1.0, None),
-        ("F3c", "F3d", 80, 1.0, None),
+        ("F3a", "F3b", 80, 1.0, None, False, 0.0),
+        ("F3b", "F3c", 80, 1.0, None, False, 0.0),
+        ("F3c", "F3d", 80, 1.0, None, False, 0.0),
         
         # Connect D buildings to library
-        ("D3d", "library", 120, 1.0, None),
+        ("D3d", "library", 120, 1.0, None, False, 0.0),
         
         # Connect F buildings to library
-        ("F3a", "library", 120, 1.0, None),
+        ("F3a", "library", 120, 1.0, None, False, 0.0),
         
-        # Connect teaching buildings to bridges (north side)
-        ("D3a", "bridge_west", 150, 1.0, None),
-        ("D3b", "bridge_west", 200, 1.0, None),
-        ("D3c", "bridge_mid_left", 180, 1.0, None),
-        ("D3d", "bridge_mid_left", 150, 1.0, None),
-        ("library", "bridge_mid_left", 150, 1.0, None),
-        ("library", "bridge_mid_right", 150, 1.0, None),
-        ("F3a", "bridge_mid_right", 150, 1.0, None),
-        ("F3b", "bridge_mid_right", 180, 1.0, None),
-        ("F3c", "bridge_east", 200, 1.0, None),
-        ("F3d", "bridge_east", 150, 1.0, None),
+        # === Connect teaching buildings to bridge heads (north side) ===
+        # To West Bridge
+        ("D3a", "bridge_west_head", 150, 1.0, None, False, 0.0),
+        ("D3b", "bridge_west_head", 200, 1.0, None, False, 0.0),
+        
+        # To Mid-Left Bridge
+        ("D3c", "bridge_mid_left_head", 180, 1.0, None, False, 0.0),
+        ("D3d", "bridge_mid_left_head", 150, 1.0, None, False, 0.0),
+        ("library", "bridge_mid_left_head", 150, 1.0, None, False, 0.0),
+        
+        # To Mid-Right Bridge
+        ("library", "bridge_mid_right_head", 150, 1.0, None, False, 0.0),
+        ("F3a", "bridge_mid_right_head", 150, 1.0, None, False, 0.0),
+        ("F3b", "bridge_mid_right_head", 180, 1.0, None, False, 0.0),
+        
+        # To East Bridge
+        ("F3c", "bridge_east_head", 200, 1.0, None, False, 0.0),
+        ("F3d", "bridge_east_head", 150, 1.0, None, False, 0.0),
+        
+        # === Riverside Roads (沿河道路) ===
+        # 🛣️ North bank road - connects all bridge heads horizontally
+        ("bridge_west_head", "bridge_mid_left_head", 320, 1.0, None, False, 0.0),
+        ("bridge_mid_left_head", "bridge_mid_right_head", 320, 1.0, None, False, 0.0),
+        ("bridge_mid_right_head", "bridge_east_head", 320, 1.0, None, False, 0.0),
+        
+        # 🛣️ South bank road - connects all bridge ends horizontally
+        ("bridge_west_end", "bridge_mid_left_end", 320, 1.0, None, False, 0.0),
+        ("bridge_mid_left_end", "bridge_mid_right_end", 320, 1.0, None, False, 0.0),
+        ("bridge_mid_right_end", "bridge_east_end", 320, 1.0, None, False, 0.0),
         
         # === River Crossing (4 bridges) ===
-        # Bridges connect north to south (these are the only river crossings!)
-        ("bridge_west", "canteen", 150, 1.0, None),
-        ("bridge_mid_left", "canteen", 120, 1.0, None),
-        ("bridge_mid_left", "gym", 150, 1.0, None),
-        ("bridge_mid_right", "gym", 150, 1.0, None),
-        ("bridge_mid_right", "D5a", 120, 1.0, None),
-        ("bridge_east", "D5b", 150, 1.0, None),
+        # 🌉 West Bridge (大桥 - Large bridge, unlimited capacity)
+        # Bridge span: head to end (120 meters across river)
+        ("bridge_west_head", "bridge_west_end", 120, 1.0, None, True, 0.0),
+        
+        # 🌉 Mid-Left Bridge (小桥 - Small bridge, limited capacity)
+        # Bridge span: head to end (120 meters across river)
+        ("bridge_mid_left_head", "bridge_mid_left_end", 120, 1.0, 15, True, 1.5),
+        
+        # 🌉 Mid-Right Bridge (小桥 - Small bridge, limited capacity)
+        # Bridge span: head to end (120 meters across river)
+        ("bridge_mid_right_head", "bridge_mid_right_end", 120, 1.0, 15, True, 1.5),
+        
+        # 🌉 East Bridge (大桥 - Large bridge, unlimited capacity)
+        # Bridge span: head to end (120 meters across river)
+        ("bridge_east_head", "bridge_east_end", 120, 1.0, None, True, 0.0),
+        
+        # === Connect bridge ends to south area ===
+        # From West Bridge
+        ("bridge_west_end", "canteen", 150, 1.0, None, False, 0.0),
+        
+        # From Mid-Left Bridge
+        ("bridge_mid_left_end", "canteen", 120, 1.0, None, False, 0.0),
+        ("bridge_mid_left_end", "gym", 150, 1.0, None, False, 0.0),
+        
+        # From Mid-Right Bridge
+        ("bridge_mid_right_end", "gym", 150, 1.0, None, False, 0.0),
+        ("bridge_mid_right_end", "D5a", 120, 1.0, None, False, 0.0),
+        
+        # From East Bridge
+        ("bridge_east_end", "D5b", 150, 1.0, None, False, 0.0),
         
         # === South Area Paths (河南区域) ===
         # Connect living facilities horizontally
-        ("canteen", "gym", 200, 1.0, None),
-        ("gym", "playground", 80, 1.0, None),
-        ("gym", "D5a", 180, 1.0, None),
-        ("playground", "D5c", 180, 1.0, None),
+        ("canteen", "gym", 200, 1.0, None, False, 0.0),
+        ("gym", "playground", 80, 1.0, None, False, 0.0),
+        ("gym", "D5a", 180, 1.0, None, False, 0.0),
+        ("playground", "D5c", 180, 1.0, None, False, 0.0),
         
         # Dormitory connections
-        ("D5a", "D5b", 80, 1.0, None),
-        ("D5c", "D5d", 80, 1.0, None),
-        ("D5a", "D5c", 80, 1.0, None),
-        ("D5b", "D5d", 80, 1.0, None),
+        ("D5a", "D5b", 80, 1.0, None, False, 0.0),
+        ("D5c", "D5d", 80, 1.0, None, False, 0.0),
+        ("D5a", "D5c", 80, 1.0, None, False, 0.0),
+        ("D5b", "D5d", 80, 1.0, None, False, 0.0),
         
         # Connect canteen to dorms (for meal times)
-        ("canteen", "playground", 250, 1.0, None),
+        ("canteen", "playground", 250, 1.0, None, False, 0.0),
     ]
     
-    for start, end, length, difficulty, capacity in paths_data:
-        graph.connect_buildings(start, end, length, difficulty=difficulty, capacity=capacity)
+    for start, end, length, difficulty, capacity, is_bridge, congestion_factor in paths_data:
+        graph.connect_buildings(
+            start, end, length, 
+            difficulty=difficulty, 
+            capacity=capacity,
+            is_bridge=is_bridge,
+            congestion_factor=congestion_factor
+        )
     
     return graph
 
