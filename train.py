@@ -21,7 +21,7 @@ from campus import (
 )
 
 # --- Training Configuration ---
-TRAINING_DAYS = 500  # 总共训练多少个模拟日
+TRAINING_DAYS = 1000  # 总共训练多少个模拟日
 STUDENTS_PER_CLASS = 50 # 训练时的学生密度
 SIM_START_TIME = "07:00"
 SIM_END_TIME = "23:00" # 每天模拟到晚上11点

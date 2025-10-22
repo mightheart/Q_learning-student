@@ -127,50 +127,55 @@ class Student:
                     self._current_path.current_students.append(self.id)
 
     def learn(self, graph: Graph, current_minutes: float):
-        """根据行动结果计算奖励并更新Q-Table。"""
+        """根据行动结果计算奖励并更新Q-Table，明确奖励“在岗”行为。"""
         if not self.last_state_action:
             return
 
         state, action = self.last_state_action
         reward = 0.0
+        p = self.personality
 
-        # --- 全新的奖励计算逻辑 (Reward Shaping) ---
+        # --- 核心修改：区分“在岗等待”和“普通等待” ---
+        current_event = self.schedule.get_current_event(_format_time(current_minutes))
         next_event = self.schedule.get_next_event(_format_time(current_minutes))
 
         if action == "wait":
-            # 如果没事做或者时间充裕，等待是好事
-            if not next_event or (next_event.start_minutes - current_minutes > 30):
-                reward += 5.0
-            else: # 否则是坏事
-                reward -= 10.0
+            # 1. 检查是否为“在岗等待”
+            if current_event and self.current_location.building_id == current_event.building_id:
+                # 在正确的时间、正确的地点等待，这是非常好的行为！
+                # 给予一个持续的、显著的正奖励。
+                reward += 20.0 
+            else:
+                # 2. 否则，是“普通等待”（在路上或没事做时等待）
+                if not next_event or (next_event.start_minutes - current_minutes > 15):
+                    # 时间充裕，耐心越高，等待的奖励越高
+                    reward += 1.0 * p.patience
+                else:
+                    # 时间紧迫，耐心越低，等待的惩罚越重
+                    reward -= 10.0 / max(p.patience, 0.1)
         
         elif action == "failed_move":
-            reward -= 20.0 # 撞墙的惩罚
+            # 撞墙（遇到拥堵）的惩罚受“风险厌恶”影响
+            reward -= 20.0 * p.risk_aversion
         
         elif isinstance(action, int):
-            # 核心：基于到目标距离变化的奖励
+            # 移动行为的奖励逻辑
             if next_event:
                 target_id = next_event.building_id
-                
-                # 移动前的距离
                 old_dist = graph.get_path_distance(state[0], target_id)
-                # 移动后的距离
                 new_dist = graph.get_path_distance(self.current_location.building_id, target_id)
 
                 if old_dist is not None and new_dist is not None:
-                    # 每向目标走近100米，就奖励10分
-                    reward += (old_dist - new_dist) / 10.0
+                    # 修改：大幅降低“距离减少”奖励的权重，让它只起到引导作用
+                    reward += (old_dist - new_dist) / 50.0
                 
-                # 如果到达了正确的目的地
                 if self.current_location.building_id == target_id:
-                    # 准时或提前到达，给予巨大奖励
                     if current_minutes <= next_event.start_minutes:
                         reward += 100.0
-                    else: # 迟到，给予巨大惩罚
-                        reward -= 100.0
+                    else: 
+                        reward -= 100.0 * p.risk_aversion
             else:
-                # 没事做的时候乱走，轻微惩罚
-                reward -= 1.0
+                reward -= 1.0 * p.risk_aversion
 
         # --- 更新Q-Table ---
         next_state = self.get_state(graph, current_minutes)
@@ -182,7 +187,26 @@ class Student:
         self.last_state_action = None
 
     def update(self, delta_time: float, current_minutes: float) -> None:
-        """只负责物理状态的推进。"""
+        """
+        推进物理状态，并根据是否旷课施加严厉的持续性惩罚。
+        """
+        # --- 新增：旷课惩罚逻辑 ---
+        current_event = self.schedule.get_current_event(_format_time(current_minutes))
+        
+        # 检查是否需要施加惩罚
+        is_truant = (
+            current_event and 
+            self.current_location.building_id != current_event.building_id
+        )
+
+        if is_truant:
+            # 如果当前有课/活动，但学生不在指定地点，则持续扣分。
+            # delta_time 保证了惩罚与“旷课”时长成正比。
+            # -50.0 是一个可调整的惩罚系数，值越大惩罚越严厉。
+            penalty = -50.0 * delta_time 
+            self.happiness += penalty
+
+        # --- 原有的移动逻辑保持不变 ---
         if self.state != "moving":
             return
 
@@ -198,7 +222,6 @@ class Student:
             self._current_path = None
             self.state = "idle"
 
-    # ... get_interpolated_position 和 _format_time 保持不变 ...
     def get_interpolated_position(self) -> Tuple[float, float]:
         if self.state != "moving" or not self._current_path:
             return (float(self.current_location.x), float(self.current_location.y))
