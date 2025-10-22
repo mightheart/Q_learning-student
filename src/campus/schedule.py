@@ -36,6 +36,9 @@ class Schedule:
         self.class_name = class_name
         self._events: List[ScheduleEvent] = []
         self._event_minutes: List[int] = []
+        
+        # Phase 1: Travel buffer configuration
+        self.travel_buffer: float = 5.0  # 出发前的时间缓冲（分钟）
 
     def add_event(self, time_str: str, building_id: str) -> None:
         """Insert a new event while keeping the internal order sorted."""
@@ -61,6 +64,25 @@ class Schedule:
         current_minutes = _time_to_minutes(current_time)
         index = bisect_right(self._event_minutes, current_minutes)
         return self._events[index:]
+    
+    def get_next_deadline(self, current_minutes: float) -> Optional[float]:
+        """Return the deadline (in minutes) for the next scheduled event.
+        
+        The deadline is calculated as: event_time - travel_buffer
+        This gives students time to plan their route and travel.
+        
+        Args:
+            current_minutes: Current simulation time in minutes
+            
+        Returns:
+            Deadline time in minutes, or None if no upcoming events
+        """
+        index = bisect_right(self._event_minutes, int(current_minutes))
+        if index >= len(self._events):
+            return None
+        
+        next_event_time = self._event_minutes[index]
+        return float(next_event_time) - self.travel_buffer
 
     def __iter__(self):  # pragma: no cover - helper for debugging
         return iter(self._events)

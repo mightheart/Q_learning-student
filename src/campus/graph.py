@@ -39,6 +39,11 @@ class Path:
     current_students: List[str] = field(default_factory=list)
     is_bridge: bool = False  # 标记是否为桥梁
     congestion_factor: float = 0.0  # 拥塞系数（仅小桥使用）
+    
+    # Phase 1: Queue management attributes
+    queue: List = field(default_factory=list)  # 等待队列（存储 Student 对象）
+    max_queue_length: int = 50  # 最大队列长度
+    base_wait_time_per_student: float = 0.1  # 每个排队学生的基础等待时间（秒）
 
     def __post_init__(self) -> None:
         if self.length <= 0:
@@ -88,6 +93,20 @@ class Path:
             return 'moderate'
         else:
             return 'clear'
+    
+    def get_queue_wait_time(self) -> float:
+        """Calculate estimated waiting time (minutes) based on current queue length."""
+        return len(self.queue) * self.base_wait_time_per_student
+    
+    def get_total_crossing_cost(self, base_speed: float = 80.0) -> float:
+        """Calculate total cost including queue wait time and travel time."""
+        queue_wait = self.get_queue_wait_time()
+        travel_time = self.get_travel_time(base_speed)
+        return queue_wait + travel_time
+    
+    def can_join_queue(self) -> bool:
+        """Check if the queue has space for more students."""
+        return len(self.queue) < self.max_queue_length
 
 
 class Graph:
@@ -142,7 +161,11 @@ class Graph:
         return forward
 
     def find_shortest_path(self, start_id: str, end_id: str) -> Tuple[float, List[Building]]:
-        """Run Dijkstra to find the lowest travel-time route."""
+        """Run Dijkstra to find the lowest travel-time route.
+        
+        Phase 2: Now considers queue wait times via get_total_crossing_cost()
+        instead of just base travel time. This makes pathfinding congestion-aware.
+        """
 
         if start_id not in self.buildings or end_id not in self.buildings:
             raise ValueError("Start or end building does not exist")
@@ -169,7 +192,8 @@ class Graph:
                 if neighbor_id in visited:
                     continue
 
-                new_time = current_time + path.get_travel_time()
+                # Phase 2: Use total crossing cost (includes queue wait time)
+                new_time = current_time + path.get_total_crossing_cost()
                 if new_time < distances.get(neighbor_id, inf):
                     distances[neighbor_id] = new_time
                     previous[neighbor_id] = current_id

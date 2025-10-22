@@ -128,6 +128,35 @@ class CampusGUI:
                         (end_pos[0] - offset, end_pos[1]),
                         1
                     )
+                    
+                    # Phase 6.1: Queue visualization
+                    queue_length = len(path.queue)
+                    if queue_length > 0:
+                        # Calculate middle position of the bridge
+                        mid_x = (start_pos[0] + end_pos[0]) // 2
+                        mid_y = (start_pos[1] + end_pos[1]) // 2
+                        
+                        # Draw queue indicator background (semi-transparent circle)
+                        indicator_pos = (mid_x + 15, mid_y)  # Offset to the right
+                        
+                        # Determine background color based on queue length
+                        if queue_length >= 40:
+                            bg_color = (220, 20, 60, 200)  # Red
+                        elif queue_length >= 20:
+                            bg_color = (255, 140, 0, 200)  # Orange
+                        elif queue_length >= 10:
+                            bg_color = (255, 215, 0, 200)  # Yellow
+                        else:
+                            bg_color = (100, 149, 237, 200)  # Cornflower blue
+                        
+                        # Draw circle background (using draw.circle for filled circle)
+                        pygame.draw.circle(self.screen, bg_color[:3], indicator_pos, 12)
+                        pygame.draw.circle(self.screen, (0, 0, 0), indicator_pos, 12, 1)  # Border
+                        
+                        # Draw queue length text
+                        queue_text = self.small_font.render(str(queue_length), True, (255, 255, 255))
+                        text_rect = queue_text.get_rect(center=indicator_pos)
+                        self.screen.blit(queue_text, text_rect)
                 else:
                     # Regular path - Manhattan style (horizontal + vertical)
                     # If nodes are on same X or Y, draw direct line
@@ -338,8 +367,15 @@ class CampusGUI:
         """Draw all students with colors based on their state."""
         
         for student in self.simulation.students:
+            # Phase 6.3: Check for deadline risk
+            current_time = self.simulation.clock.current_minutes
+            is_at_risk = student.is_deadline_at_risk(current_time)
+            
             # Determine color based on state
-            if student.state == "idle":
+            if is_at_risk:
+                # Override color with red if deadline is at risk
+                color = (255, 0, 0)  # Bright red for deadline warning
+            elif student.state == "idle":
                 color = COLORS["student_idle"]
             elif student.state == "moving":
                 color = COLORS["student_moving"]
@@ -354,7 +390,11 @@ class CampusGUI:
             
             radius = 7 if student == self.selected_student else 5
             pygame.draw.circle(self.screen, color, pos, radius)
-            pygame.draw.circle(self.screen, (0, 0, 0), pos, radius, 2 if student == self.selected_student else 1)
+            
+            # Phase 6.3: Use thicker border for at-risk students
+            border_width = 3 if is_at_risk else (2 if student == self.selected_student else 1)
+            border_color = (255, 0, 0) if is_at_risk else (0, 0, 0)
+            pygame.draw.circle(self.screen, border_color, pos, radius, border_width)
             
             # Draw highlight ring for selected student
             if student == self.selected_student:
@@ -415,6 +455,24 @@ class CampusGUI:
             ]
             if self.selected_student.active_event:
                 info_texts.append(f"Next: {self.selected_student.active_event.building_id} @ {self.selected_student.active_event.time_str}")
+            
+            # Phase 6.2: Add ETA and deadline display
+            if self.selected_student.active_event and self.selected_student.deadline:
+                current_time = self.simulation.clock.current_minutes
+                eta = self.selected_student.calculate_eta(current_time)
+                deadline = self.selected_student.deadline
+                
+                if eta is not None:
+                    # Format times as HH:MM
+                    eta_str = f"{int(eta // 60):02d}:{int(eta % 60):02d}"
+                    deadline_str = f"{int(deadline // 60):02d}:{int(deadline % 60):02d}"
+                    
+                    # Calculate buffer
+                    buffer = deadline - eta
+                    buffer_str = f"{buffer:.1f} min"
+                    
+                    info_texts.append(f"ETA: {eta_str} | Deadline: {deadline_str}")
+                    info_texts.append(f"Time Buffer: {buffer_str}")
             
             # Add path analysis data
             if self.selected_student.state == "moving" or self.selected_student.state == "waiting":
