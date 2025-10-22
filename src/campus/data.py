@@ -191,94 +191,92 @@ def create_campus_map() -> Graph:
 
 
 def create_class_schedules() -> dict[str, Schedule]:
-    """Create realistic schedules for 5 different classes.
-    
-    Schedule follows typical university timetable:
-    - Morning: 08:00-12:00 (classes in teaching buildings)
-    - Lunch: 12:00-13:30 (canteen, 30-40 min)
-    - Afternoon: 14:00-17:00 (classes/library/sports)
-    - Dinner: 18:00-19:00 (canteen, 30-40 min)
-    - Evening: 19:00-22:00 (library/dorm)
-    - Night: 22:00+ (dorm/sleep)
-    """
+    """为5个不同班级创建包含事件持续时间的真实课程表。"""
     
     schedules = {}
     
+    # 定义通用时长
+    CLASS_DURATION = 90      # 课程/自习时长：1.5小时
+    GYM_DURATION = 30        # 健身时长：30分钟
+    BREAKFAST_DURATION = 20  # 早餐时长
+    LUNCH_DURATION = 40      # 午餐时长
+    DINNER_DURATION = 30     # 晚餐时长
+    
     # === Class 1: Computer Science ===
     cs_schedule = Schedule("CS Class 1")
-    cs_schedule.add_event("07:00", "D5a")          # Wake up in dorm
-    cs_schedule.add_event("07:30", "canteen")      # Breakfast (30 min)
-    cs_schedule.add_event("08:00", "D3a")          # Morning class 1
-    cs_schedule.add_event("10:00", "D3b")          # Morning class 2
-    cs_schedule.add_event("12:00", "canteen")      # Lunch (40 min)
-    cs_schedule.add_event("12:40", "library")      # Noon break/study
-    cs_schedule.add_event("14:00", "F3a")          # Afternoon class 1
-    cs_schedule.add_event("16:00", "F3b")          # Afternoon class 2
-    cs_schedule.add_event("18:00", "canteen")      # Dinner (30 min)
-    cs_schedule.add_event("18:30", "library")      # Evening study
-    cs_schedule.add_event("21:30", "D5a")          # Back to dorm
+    #cs_schedule.add_event("07:00", "D5a", 30)
+    cs_schedule.add_event("07:30", "canteen", BREAKFAST_DURATION)
+    cs_schedule.add_event("08:00", "D3a", CLASS_DURATION)
+    cs_schedule.add_event("10:00", "D3b", CLASS_DURATION)
+    cs_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
+    cs_schedule.add_event("12:40", "library", 80)
+    cs_schedule.add_event("14:00", "F3a", CLASS_DURATION)
+    cs_schedule.add_event("16:00", "F3b", CLASS_DURATION)
+    cs_schedule.add_event("18:00", "canteen", DINNER_DURATION)
+    cs_schedule.add_event("18:30", "library", 180)
+    cs_schedule.add_event("21:30", "D5a", 60)
     schedules["CS1"] = cs_schedule
     
     # === Class 2: Mathematics ===
     math_schedule = Schedule("Math Class 2")
-    math_schedule.add_event("07:00", "D5b")        # Wake up in dorm
-    math_schedule.add_event("07:40", "canteen")    # Breakfast
-    math_schedule.add_event("08:20", "F3c")        # Morning class 1
-    math_schedule.add_event("10:10", "F3d")        # Morning class 2
-    math_schedule.add_event("12:00", "canteen")    # Lunch
-    math_schedule.add_event("12:35", "playground") # Noon break/walk
-    math_schedule.add_event("14:00", "library")    # Self-study session
-    math_schedule.add_event("16:00", "D3c")        # Afternoon class
-    math_schedule.add_event("18:00", "canteen")    # Dinner
-    math_schedule.add_event("18:40", "library")    # Evening study
-    math_schedule.add_event("22:00", "D5b")        # Back to dorm
+    #math_schedule.add_event("07:00", "D5b", 40)
+    math_schedule.add_event("07:40", "canteen", BREAKFAST_DURATION + 5)
+    math_schedule.add_event("08:20", "F3c", CLASS_DURATION)
+    math_schedule.add_event("10:10", "F3d", CLASS_DURATION)
+    math_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
+    math_schedule.add_event("12:40", "playground", 80)
+    math_schedule.add_event("14:00", "library", CLASS_DURATION)
+    math_schedule.add_event("16:00", "D3c", CLASS_DURATION)
+    math_schedule.add_event("18:00", "canteen", DINNER_DURATION + 10)
+    math_schedule.add_event("18:40", "library", 200)
+    math_schedule.add_event("22:00", "D5b", 60)
     schedules["MATH"] = math_schedule
     
     # === Class 3: Physics ===
     physics_schedule = Schedule("Physics Class 3")
-    physics_schedule.add_event("07:00", "D5c")     # Wake up in dorm
-    physics_schedule.add_event("07:30", "canteen") # Breakfast
-    physics_schedule.add_event("08:10", "D3d")     # Morning class 1
-    physics_schedule.add_event("10:00", "F3a")     # Morning class 2
-    physics_schedule.add_event("12:00", "canteen") # Lunch
-    physics_schedule.add_event("12:40", "D5c")     # Noon rest in dorm
-    physics_schedule.add_event("14:00", "library") # Afternoon study
-    physics_schedule.add_event("15:30", "gym")     # PE class
-    physics_schedule.add_event("17:30", "playground") # Sports activity
-    physics_schedule.add_event("18:00", "canteen") # Dinner
-    physics_schedule.add_event("18:35", "library") # Evening study
-    physics_schedule.add_event("21:00", "D5c")     # Back to dorm
+    #physics_schedule.add_event("07:00", "D5c", 30)
+    physics_schedule.add_event("07:30", "canteen", BREAKFAST_DURATION)
+    physics_schedule.add_event("08:10", "D3d", CLASS_DURATION)
+    physics_schedule.add_event("10:00", "F3a", CLASS_DURATION)
+    physics_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
+    physics_schedule.add_event("12:40", "D5c", 80)
+    physics_schedule.add_event("14:00", "library", CLASS_DURATION)
+    physics_schedule.add_event("15:30", "gym", GYM_DURATION)
+    physics_schedule.add_event("17:30", "playground", 30)
+    physics_schedule.add_event("18:00", "canteen", DINNER_DURATION)
+    physics_schedule.add_event("18:30", "library", 150)
+    physics_schedule.add_event("21:00", "D5c", 60)
     schedules["PHYS"] = physics_schedule
     
     # === Class 4: English ===
     english_schedule = Schedule("English Class 4")
-    english_schedule.add_event("07:00", "D5d")     # Wake up in dorm
-    english_schedule.add_event("07:35", "canteen") # Breakfast
-    english_schedule.add_event("08:15", "F3b")     # Morning class 1
-    english_schedule.add_event("10:10", "library") # Morning reading
-    english_schedule.add_event("12:00", "canteen") # Lunch
-    english_schedule.add_event("12:40", "playground") # Noon walk
-    english_schedule.add_event("14:00", "D3b")     # Afternoon class 1
-    english_schedule.add_event("16:00", "D3c")     # Afternoon class 2
-    english_schedule.add_event("18:00", "canteen") # Dinner
-    english_schedule.add_event("18:30", "library") # Evening study
-    english_schedule.add_event("20:30", "D5d")     # Back to dorm
+    #english_schedule.add_event("07:00", "D5d", 35)
+    english_schedule.add_event("07:35", "canteen", BREAKFAST_DURATION)
+    english_schedule.add_event("08:15", "F3b", CLASS_DURATION)
+    english_schedule.add_event("10:10", "library", CLASS_DURATION)
+    english_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
+    english_schedule.add_event("12:40", "playground", 80)
+    english_schedule.add_event("14:00", "D3b", CLASS_DURATION)
+    english_schedule.add_event("16:00", "D3c", CLASS_DURATION)
+    english_schedule.add_event("18:00", "canteen", DINNER_DURATION)
+    english_schedule.add_event("18:30", "library", 120)
+    english_schedule.add_event("20:30", "D5d", 60)
     schedules["ENG"] = english_schedule
     
     # === Class 5: Chemistry ===
     chem_schedule = Schedule("Chemistry Class 5")
-    chem_schedule.add_event("07:00", "D5a")        # Wake up in dorm
-    chem_schedule.add_event("07:30", "canteen")    # Breakfast
-    chem_schedule.add_event("08:00", "F3d")        # Morning class 1
-    chem_schedule.add_event("10:00", "D3a")        # Morning class 2 (lab)
-    chem_schedule.add_event("12:00", "canteen")    # Lunch
-    chem_schedule.add_event("12:30", "library")    # Noon reading
-    chem_schedule.add_event("14:00", "F3c")        # Afternoon class
-    chem_schedule.add_event("16:00", "library")    # Lab report writing
-    chem_schedule.add_event("18:00", "canteen")    # Dinner
-    chem_schedule.add_event("18:40", "gym")        # Exercise
-    chem_schedule.add_event("19:30", "library")    # Evening study
-    chem_schedule.add_event("21:30", "D5a")        # Back to dorm
+    #chem_schedule.add_event("07:00", "D5a", 30)
+    chem_schedule.add_event("07:30", "canteen", BREAKFAST_DURATION)
+    chem_schedule.add_event("08:00", "F3d", CLASS_DURATION)
+    chem_schedule.add_event("10:00", "D3a", CLASS_DURATION)
+    chem_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
+    chem_schedule.add_event("12:30", "library", 90)
+    chem_schedule.add_event("14:00", "F3c", CLASS_DURATION)
+    chem_schedule.add_event("16:00", "library", CLASS_DURATION)
+    chem_schedule.add_event("18:00", "canteen", DINNER_DURATION)
+    chem_schedule.add_event("18:30", "gym", GYM_DURATION)
+    chem_schedule.add_event("19:00", "library", 150)
+    chem_schedule.add_event("21:30", "D5a", 60)
     schedules["CHEM"] = chem_schedule
     
     return schedules

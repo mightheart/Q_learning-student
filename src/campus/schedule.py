@@ -19,14 +19,21 @@ def _time_to_minutes(time_str: str) -> int:
 
 @dataclass(frozen=True)
 class ScheduleEvent:
-    """Single schedule entry linking a time to a destination building."""
+    """将时间与目的地建筑关联的单个日程条目。"""
 
     time_str: str
     building_id: str
+    duration: int  # 新增：事件的持续时间（分钟）
 
     @property
-    def minutes(self) -> int:
+    def start_minutes(self) -> int:
+        """事件开始时间（分钟）。"""
         return _time_to_minutes(self.time_str)
+
+    @property
+    def end_minutes(self) -> int:
+        """事件结束时间（分钟）。"""
+        return self.start_minutes + self.duration
 
 
 class Schedule:
@@ -40,14 +47,31 @@ class Schedule:
         # Phase 1: Travel buffer configuration
         self.travel_buffer: float = 5.0  # 出发前的时间缓冲（分钟）
 
-    def add_event(self, time_str: str, building_id: str) -> None:
-        """Insert a new event while keeping the internal order sorted."""
+    def add_event(self, time_str: str, building_id: str, duration: int) -> None:
+        """插入一个新事件，同时保持内部顺序排序。"""
 
         minutes = _time_to_minutes(time_str)
-        event = ScheduleEvent(time_str=time_str, building_id=building_id)
+        # 修改：创建事件时传入 duration
+        event = ScheduleEvent(time_str=time_str, building_id=building_id, duration=duration)
         position = bisect_right(self._event_minutes, minutes)
         self._event_minutes.insert(position, minutes)
         self._events.insert(position, event)
+
+    def get_current_event(self, current_time: str) -> Optional[ScheduleEvent]:
+        """新增：获取当前时间正在进行的事件。"""
+        current_minutes = _time_to_minutes(current_time)
+        # 寻找最后一个开始时间 <= 当前时间的事件
+        index = bisect_right(self._event_minutes, current_minutes) - 1
+        
+        if index < 0:
+            return None
+            
+        event = self._events[index]
+        # 检查当前时间是否在该事件的时间范围内
+        if event.start_minutes <= current_minutes < event.end_minutes:
+            return event
+            
+        return None
 
     def get_next_event(self, current_time: str) -> Optional[ScheduleEvent]:
         """Return the first event strictly after ``current_time``."""

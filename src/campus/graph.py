@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass, field
-from heapq import heappop, heappush
-from math import inf
 from typing import Dict, List, Optional, Tuple
 
 
@@ -20,7 +19,6 @@ class Building:
 
     def add_path(self, path: "Path") -> None:
         """Register an outgoing path from this building."""
-
         self.paths.append(path)
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
@@ -37,13 +35,8 @@ class Path:
     difficulty: float = 1.0
     capacity: Optional[int] = None
     current_students: List[str] = field(default_factory=list)
-    is_bridge: bool = False  # 标记是否为桥梁
-    congestion_factor: float = 0.0  # 拥塞系数（仅小桥使用）
-    
-    # Phase 1: Queue management attributes
-    queue: List = field(default_factory=list)  # 等待队列（存储 Student 对象）
-    max_queue_length: int = 50  # 最大队列长度
-    base_wait_time_per_student: float = 0.1  # 每个排队学生的基础等待时间（秒）
+    is_bridge: bool = False
+    congestion_factor: float = 1.0
 
     def __post_init__(self) -> None:
         if self.length <= 0:
@@ -54,73 +47,38 @@ class Path:
             raise ValueError("Capacity must be positive when provided")
 
     def get_travel_time(self, base_speed: float = 80.0) -> float:
-        """Calculate travel time (minutes) for this path.
-        
-        For bridges with limited capacity (small bridges), the travel time
-        increases with congestion. Large bridges (capacity=None) have fixed time.
+        """
+        计算此路径的通行时间（分钟）。
+        对于有容量限制的桥梁，通行时间会随着拥塞而增加。
         """
         base_time = (self.length * self.difficulty) / base_speed
         
-        # 如果是桥梁且有容量限制（小桥）
-        if self.is_bridge and self.capacity is not None:
-            # 计算当前占用率
+        if self.is_bridge and self.capacity is not None and self.capacity > 0:
             occupancy_ratio = len(self.current_students) / self.capacity
-            # 动态成本：travel_time = base_time * (1 + congestion_factor * occupancy_ratio)
-            # congestion_factor 控制拥塞影响程度，例如 1.0 表示满员时时间翻倍
             return base_time * (1.0 + self.congestion_factor * occupancy_ratio)
         
-        # 普通路径或大桥（容量无限）：固定成本
         return base_time
 
     def has_capacity(self) -> bool:
-        """Return True when the path can accept more students."""
-
+        """如果路径还能容纳更多学生，则返回True。"""
         if self.capacity is None:
             return True
         return len(self.current_students) < self.capacity
-    
-    def get_congestion_level(self) -> str:
-        """Return congestion level: 'clear', 'moderate', 'heavy', 'full'."""
-        if not self.is_bridge or self.capacity is None:
-            return 'clear'
-        
-        occupancy_ratio = len(self.current_students) / self.capacity
-        if occupancy_ratio >= 1.0:
-            return 'full'
-        elif occupancy_ratio >= 0.7:
-            return 'heavy'
-        elif occupancy_ratio >= 0.4:
-            return 'moderate'
-        else:
-            return 'clear'
-    
-    def get_queue_wait_time(self) -> float:
-        """Calculate estimated waiting time (minutes) based on current queue length."""
-        return len(self.queue) * self.base_wait_time_per_student
-    
-    def get_total_crossing_cost(self, base_speed: float = 80.0) -> float:
-        """Calculate total cost including queue wait time and travel time."""
-        queue_wait = self.get_queue_wait_time()
-        travel_time = self.get_travel_time(base_speed)
-        return queue_wait + travel_time
-    
-    def can_join_queue(self) -> bool:
-        """Check if the queue has space for more students."""
-        return len(self.queue) < self.max_queue_length
 
 
 class Graph:
-    """Manages the campus graph and shortest path queries."""
+    """管理校园图结构。"""
 
     def __init__(self) -> None:
         self.buildings: Dict[str, Building] = {}
+        self._distance_matrix: Optional[Dict[str, Dict[str, float]]] = None
 
     def add_building(self, building: Building) -> None:
-        """Add a building node to the graph."""
-
+        """向图中添加一个建筑节点。"""
         if building.building_id in self.buildings:
             raise ValueError(f"Building {building.building_id} already exists")
         self.buildings[building.building_id] = building
+        self._distance_matrix = None # 添加新建筑后，距离缓存失效
 
     def connect_buildings(
         self,
@@ -134,14 +92,7 @@ class Graph:
         is_bridge: bool = False,
         congestion_factor: float = 1.0,
     ) -> Path:
-        """Create a path between two buildings and return the forward edge.
-        
-        Args:
-            is_bridge: Mark this path as a bridge (affects dynamic cost calculation)
-            congestion_factor: How much congestion affects travel time (0-2.0 typical)
-                              1.0 means full bridge doubles travel time
-        """
-
+        """在两个建筑之间创建一条路径。"""
         start = self._require_building(start_id)
         end = self._require_building(end_id)
 
@@ -157,131 +108,75 @@ class Graph:
                 capacity=capacity, is_bridge=is_bridge, congestion_factor=congestion_factor
             )
             end.add_path(backward)
-
+        
+        self._distance_matrix = None # 连接新路径后，距离缓存失效
         return forward
 
-    def find_shortest_path(self, start_id: str, end_id: str) -> Tuple[float, List[Building]]:
-        """Run Dijkstra to find the lowest travel-time route.
-        
-        Phase 2: Now considers queue wait times via get_total_crossing_cost()
-        instead of just base travel time. This makes pathfinding congestion-aware.
+    def find_shortest_path(
+        self, start_id: str, end_id: str, base_speed: float = 80.0
+    ) -> Optional[List[Building]]:
         """
+        使用Dijkstra算法寻找考虑当前拥塞的【最快】路径。
+        返回一个建筑列表作为路径，如果找不到路径则返回None。
+        """
+        start_node = self._require_building(start_id)
+        pq = [(0, start_node.building_id, [start_node])]
+        min_costs = {start_node.building_id: 0}
+        
+        while pq:
+            cost, current_id, path_list = heapq.heappop(pq)
 
-        if start_id not in self.buildings or end_id not in self.buildings:
-            raise ValueError("Start or end building does not exist")
-
-        distances: Dict[str, float] = {start_id: 0.0}
-        previous: Dict[str, str] = {}
-        heap: List[Tuple[float, str]] = [(0.0, start_id)]
-        visited: set[str] = set()
-
-        while heap:
-            current_time, current_id = heappop(heap)
-            if current_id in visited:
+            if cost > min_costs.get(current_id, float('inf')):
                 continue
-            visited.add(current_id)
 
             if current_id == end_id:
-                break
+                return path_list
 
             current_building = self.buildings[current_id]
-            for path in current_building.paths:
-                if not path.has_capacity():
-                    continue
-                neighbor_id = path.end.building_id
-                if neighbor_id in visited:
-                    continue
+            for path_edge in current_building.paths:
+                neighbor_id = path_edge.end.building_id
+                travel_time = path_edge.get_travel_time(base_speed)
+                new_cost = cost + travel_time
 
-                # Phase 2: Use total crossing cost (includes queue wait time)
-                new_time = current_time + path.get_total_crossing_cost()
-                if new_time < distances.get(neighbor_id, inf):
-                    distances[neighbor_id] = new_time
-                    previous[neighbor_id] = current_id
-                    heappush(heap, (new_time, neighbor_id))
+                if new_cost < min_costs.get(neighbor_id, float('inf')):
+                    min_costs[neighbor_id] = new_cost
+                    new_path_list = path_list + [path_edge.end]
+                    heapq.heappush(pq, (new_cost, neighbor_id, new_path_list))
 
-        if end_id not in distances:
-            raise ValueError(f"No path found from {start_id} to {end_id}")
+        return None
 
-        return distances[end_id], self._reconstruct_route(previous, start_id, end_id)
-
-    def find_second_shortest_path(self, start_id: str, end_id: str) -> float:
-        """Find the cost of the second shortest path using Yen's algorithm (simplified version).
-        
-        Returns the total travel time of the second best route.
-        Raises ValueError if no second path exists.
+    def get_path_distance(self, start_id: str, end_id: str) -> Optional[float]:
         """
+        使用预计算的距离矩阵快速获取两点间的【最短物理距离】。
+        这是奖励塑形（Reward Shaping）的关键。
+        """
+        if self._distance_matrix is None:
+            self._compute_all_pairs_shortest_paths()
         
-        if start_id not in self.buildings or end_id not in self.buildings:
-            raise ValueError("Start or end building does not exist")
-        
-        # First, find the shortest path
-        try:
-            best_cost, best_route = self.find_shortest_path(start_id, end_id)
-        except ValueError:
-            raise ValueError("No path exists")
-        
-        # If path has only 2 nodes, there's no alternative
-        if len(best_route) <= 2:
-            raise ValueError("No alternative path available")
-        
-        # Try to find alternative paths by temporarily removing each edge in the best path
-        alternative_costs = []
-        
-        for i in range(len(best_route) - 1):
-            # Temporarily mark this edge as having no capacity
-            current_building = best_route[i]
-            next_building = best_route[i + 1]
-            
-            # Find the path object to modify
-            target_path = None
-            for path in current_building.paths:
-                if path.end.building_id == next_building.building_id:
-                    target_path = path
-                    break
-            
-            if target_path:
-                # Save original capacity
-                original_capacity = target_path.capacity
-                original_students = target_path.current_students.copy()
-                
-                # Temporarily block this path
-                target_path.capacity = 0
-                target_path.current_students = ["__BLOCKED__"] * 1  # Make it full
-                
-                try:
-                    # Try to find alternative route
-                    alt_cost, _ = self.find_shortest_path(start_id, end_id)
-                    if alt_cost > best_cost:  # Must be longer than best path
-                        alternative_costs.append(alt_cost)
-                except ValueError:
-                    # No alternative route with this edge removed
-                    pass
-                
-                # Restore original capacity
-                target_path.capacity = original_capacity
-                target_path.current_students = original_students
-        
-        if not alternative_costs:
-            raise ValueError("No alternative path found")
-        
-        # Return the shortest among alternatives (which is the second shortest overall)
-        return min(alternative_costs)
+        return self._distance_matrix.get(start_id, {}).get(end_id)
 
-    def _reconstruct_route(
-        self,
-        previous: Dict[str, str],
-        start_id: str,
-        end_id: str,
-    ) -> List[Building]:
-        route: List[Building] = []
-        current_id = end_id
-        while True:
-            route.append(self.buildings[current_id])
-            if current_id == start_id:
-                break
-            current_id = previous[current_id]
-        route.reverse()
-        return route
+    def _compute_all_pairs_shortest_paths(self) -> None:
+        """
+        使用Floyd-Warshall算法计算所有节点对之间的最短物理距离，并缓存结果。
+        这个方法只在第一次调用 get_path_distance 时执行一次。
+        """
+        print("首次计算全图节点距离矩阵 (Floyd-Warshall)...")
+        dist: Dict[str, Dict[str, float]] = {b: {b2: float('inf') for b2 in self.buildings} for b in self.buildings}
+
+        for building_id, building in self.buildings.items():
+            dist[building_id][building_id] = 0
+            for path in building.paths:
+                dist[path.start.building_id][path.end.building_id] = path.length
+
+        nodes = list(self.buildings.keys())
+        for k in nodes:
+            for i in nodes:
+                for j in nodes:
+                    if dist[i][j] > dist[i][k] + dist[k][j]:
+                        dist[i][j] = dist[i][k] + dist[k][j]
+        
+        self._distance_matrix = dist
+        print("距离矩阵计算完成。")
 
     def _require_building(self, building_id: str) -> Building:
         if building_id not in self.buildings:
@@ -289,8 +184,7 @@ class Graph:
         return self.buildings[building_id]
 
     def get_path(self, start_id: str, end_id: str) -> Path:
-        """Return the direct path object between two buildings."""
-
+        """返回两个建筑之间的直接路径对象。"""
         start = self._require_building(start_id)
         for path in start.paths:
             if path.end.building_id == end_id:
@@ -298,9 +192,10 @@ class Graph:
         raise ValueError(f"Path from {start_id} to {end_id} not found")
 
     def get_building(self, building_id: str) -> Building:
-        """Return the building identified by ``building_id``."""
-
+        """返回指定ID的建筑对象。"""
         return self._require_building(building_id)
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"Graph(buildings={list(self.buildings)})"
+
+__all__ = ["Building", "Path", "Graph"]

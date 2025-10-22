@@ -1,45 +1,44 @@
-"""Student agent implementation for the campus simulation."""
+"""学生智能体实现，使用Q-learning进行智能决策。(最终版：采用Reward Shaping)"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+import random
+import json
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any
 
 from .graph import Building, Graph, Path
-from .queue_manager import QueueManager
 from .schedule import Schedule, ScheduleEvent
 
-
+# --- 组件：Personality 和 QLearningAgent (保持不变) ---
 @dataclass
-class _Segment:
-    """Represents progress travelling along a path."""
+class Personality:
+    patience: float = field(default_factory=lambda: random.uniform(0.2, 1.0))
+    risk_aversion: float = field(default_factory=lambda: random.uniform(0.5, 1.5))
 
-    path: Path
-    remaining_time: float
-    started: bool = False
+class QLearningAgent:
+    def __init__(self, actions: List[Any]):
+        self.q_table: Dict[Any, Dict[Any, float]] = {}
+        self.actions = actions
+        self.learning_rate: float = 0.1
+        self.discount_factor: float = 0.9
+        self.exploration_rate: float = 0.1
 
-    def step(self, student_id: str, delta_time: float) -> float:
-        """Advance along the path and return leftover time."""
+    def get_q_value(self, state: Any, action: Any) -> float:
+        return self.q_table.get(state, {}).get(action, 0.0)
 
-        if not self.started:
-            if not self.path.has_capacity():
-                raise RuntimeError("Path capacity exceeded")
-            self.path.current_students.append(student_id)
-            self.started = True
-
-        if delta_time < self.remaining_time:
-            self.remaining_time -= delta_time
-            return 0.0
-
-        delta_time -= self.remaining_time
-        self.remaining_time = 0.0
-        if student_id in self.path.current_students:
-            self.path.current_students.remove(student_id)
-        return delta_time
-
+    def update(self, state: Any, action: Any, reward: float, next_state: Any, next_available_actions: List[Any]):
+        old_value = self.get_q_value(state, action)
+        next_max = 0.0
+        if next_available_actions:
+            next_max = max(self.get_q_value(next_state, act) for act in next_available_actions)
+        new_value = old_value + self.learning_rate * (reward + self.discount_factor * next_max - old_value)
+        if state not in self.q_table:
+            self.q_table[state] = {}
+        self.q_table[state][action] = new_value
 
 class Student:
-    """Represents a moving student agent with a schedule."""
+    """代表一个由Q-learning驱动的学生智能体。"""
 
     def __init__(
         self,
@@ -47,437 +46,176 @@ class Student:
         class_name: str,
         schedule: Schedule,
         start_building: Building,
-        queue_manager: Optional[QueueManager] = None,
     ) -> None:
         self.id = student_id
         self.class_name = class_name
         self.schedule = schedule
         self.current_location: Building = start_building
-        self.state: str = "idle"  # idle, moving, waiting, in_class
-        self.path_to_destination: List[Building] = []
-        self._segments: List[_Segment] = []
-        self._active_event: Optional[ScheduleEvent] = None
-        
-        # Animation state for smooth movement
-        self._animation_progress: float = 0.0  # 0.0 to 1.0 along current segment
-        
-        # Phase 1: Deadline and ETA tracking
-        self.deadline: Optional[float] = None  # 当前目标的截止时间（分钟）
-        self.eta: Optional[float] = None  # 预计到达时间（分钟）
-        self.buffer_time: float = 5.0  # 时间缓冲（分钟）
-        self.last_replan_time: Optional[float] = None  # 上次重新规划的时间
-        self.in_queue: bool = False  # 是否在队列中等待
-        self.queued_path: Optional[Path] = None  # 正在排队的路径
-        
-        # Phase 3.2: Queue manager reference
-        self._queue_manager: Optional[QueueManager] = queue_manager
-        self._current_segment_index: int = 0
-        
-        # Bridge congestion management
-        self._wait_time: float = 0.0  # How long student has been waiting
-        self._max_wait_time: float = 2.0  # Maximum wait time (minutes) before rerouting
-        self._congestion_threshold: float = 0.7  # Don't enter bridge if >70% full
-        self._last_graph: Optional[Graph] = None  # Keep reference for rerouting
+        self.state: str = "idle"
 
-    def plan_next_move(self, current_time: str, graph: Graph) -> Optional[ScheduleEvent]:
-        """Plan a route towards the next scheduled event."""
+        self.personality = Personality()
+        self.happiness: float = 100.0
+        self.base_speed: float = 80.0
+        self.agent = QLearningAgent(actions=[])
 
-        self._last_graph = graph  # Store for potential rerouting
+        self._current_path: Optional[Path] = None
+        self._travel_time_remaining: float = 0.0
         
-        next_event = self.schedule.get_next_event(current_time)
-        if next_event is None:
-            self._clear_plan()
-            self.deadline = None  # Phase 5: Clear deadline
-            return None
+        # 简化：last_state_action 只存储状态和动作
+        self.last_state_action: Optional[Tuple[Any, Any]] = None
 
-        target = graph.get_building(next_event.building_id)
-        if self.current_location.building_id == target.building_id:
-            self.state = "in_class"
-            self._clear_plan()
-            self._active_event = next_event
-            self.deadline = None  # Phase 5: Already at destination
-            return next_event
-
-        # Clear old path data completely before planning new route
-        self._clear_plan()
+    def get_state(self, graph: Graph, current_minutes: float) -> Any:
+        """构建当前状态，用于Q-learning决策。"""
+        next_event = self.schedule.get_next_event(_format_time(current_minutes))
         
-        total_time, route = graph.find_shortest_path(
-            self.current_location.building_id, target.building_id
+        # 统一状态表示法
+        if not next_event:
+            # 如果没有下一个事件，目标就是宿舍("Dorm")，且时间充裕(2)
+            target_building_id = "Dorm"
+            deadline_bucket = 2
+        else:
+            target_building_id = next_event.building_id
+            minutes_to_deadline = next_event.start_minutes - current_minutes
+            if minutes_to_deadline < 0: deadline_bucket = -1
+            elif minutes_to_deadline < 15: deadline_bucket = 0
+            elif minutes_to_deadline < 30: deadline_bucket = 1
+            else: deadline_bucket = 2
+        
+        return (
+            self.current_location.building_id,
+            target_building_id,
+            deadline_bucket,
         )
-        if len(route) < 2:
-            raise RuntimeError("Route must contain at least two buildings")
 
-        segments: List[_Segment] = []
-        for start, end in zip(route, route[1:]):
-            path = graph.get_path(start.building_id, end.building_id)
-            segments.append(_Segment(path=path, remaining_time=path.get_travel_time()))
-
-        self.state = "moving"
-        self.path_to_destination = route
-        self._segments = segments
-        self._active_event = next_event
-        self._current_segment_index = 0
-        self._wait_time = 0.0  # Reset wait time
-        
-        # Phase 5: Set deadline for this movement
-        # Deadline = event time - buffer time
-        self.deadline = float(next_event.minutes) - self.buffer_time
-        
-        return next_event
-
-    def update(self, delta_time: float) -> None:
-        """Advance the student's movement state."""
-
-        # Handle waiting state
-        if self.state == "waiting":
-            self._wait_time += delta_time
-            
-            # Check if wait time exceeded
-            if self._wait_time >= self._max_wait_time:
-                # Give up waiting, try to reroute
-                if self._last_graph and self._active_event:
-                    target = self._last_graph.get_building(self._active_event.building_id)
-                    try:
-                        # Clean up old path data first
-                        self._clear_plan()
-                        
-                        # Attempt to find alternative route
-                        total_time, route = self._last_graph.find_shortest_path(
-                            self.current_location.building_id, target.building_id
-                        )
-                        # Create new segments
-                        segments: List[_Segment] = []
-                        for start, end in zip(route, route[1:]):
-                            path = self._last_graph.get_path(start.building_id, end.building_id)
-                            segments.append(_Segment(path=path, remaining_time=path.get_travel_time()))
-                        
-                        self.state = "moving"
-                        self.path_to_destination = route
-                        self._segments = segments
-                        self._active_event = self._active_event  # Restore active event
-                        self._wait_time = 0.0
-                        self._current_segment_index = 0
-                    except ValueError:
-                        # No alternative route, continue waiting
-                        self._wait_time = 0.0  # Reset to wait again
-                return
-            
-            # Check if next segment (bridge) has capacity now
-            if self._segments:
-                next_segment = self._segments[0]
-                if next_segment.path.is_bridge and next_segment.path.capacity is not None:
-                    occupancy_ratio = len(next_segment.path.current_students) / next_segment.path.capacity
-                    # If congestion cleared enough, resume moving
-                    if occupancy_ratio < self._congestion_threshold:
-                        self.state = "moving"
-                        self._wait_time = 0.0
+    def decide_and_act(self, graph: Graph, current_minutes: float):
+        """决策逻辑：不再需要“老师”，AI可以完全自主学习。"""
+        if self.state != "idle":
             return
 
-        if self.state != "moving" or not self._segments:
+        current_state = self.get_state(graph, current_minutes)
+        available_actions = list(range(len(self.current_location.paths))) + ["wait"]
+        
+        action = None
+        if random.random() < self.agent.exploration_rate:
+            action = random.choice(available_actions)
+        else:
+            q_values = {act: self.agent.get_q_value(current_state, act) for act in available_actions}
+            max_q = max(q_values.values())
+            best_actions = [act for act, q_val in q_values.items() if q_val == max_q]
+            if best_actions:
+                action = random.choice(best_actions)
+
+        if action is None:
+            action = random.choice(available_actions)
+
+        # 存储决策，以便 learn() 方法计算奖励
+        self.last_state_action = (current_state, action)
+
+        if action == "wait":
+            # 等待动作在 learn() 中处理
+            self.state = "idle"
+        elif isinstance(action, int):
+            chosen_path = self.current_location.paths[action]
+            if chosen_path.is_bridge and not chosen_path.has_capacity():
+                # 撞墙的惩罚在 learn() 中处理
+                self.last_state_action = (current_state, "failed_move")
+            else:
+                self.state = "moving"
+                self._current_path = chosen_path
+                self._travel_time_remaining = chosen_path.get_travel_time(self.base_speed)
+                if self._current_path.is_bridge:
+                    self._current_path.current_students.append(self.id)
+
+    def learn(self, graph: Graph, current_minutes: float):
+        """根据行动结果计算奖励并更新Q-Table。"""
+        if not self.last_state_action:
             return
 
-        remaining = delta_time
-        while remaining > 0.0 and self._segments:
-            segment = self._segments[0]
-            self._current_segment_index = 0
+        state, action = self.last_state_action
+        reward = 0.0
+
+        # --- 全新的奖励计算逻辑 (Reward Shaping) ---
+        next_event = self.schedule.get_next_event(_format_time(current_minutes))
+
+        if action == "wait":
+            # 如果没事做或者时间充裕，等待是好事
+            if not next_event or (next_event.start_minutes - current_minutes > 30):
+                reward += 5.0
+            else: # 否则是坏事
+                reward -= 10.0
+        
+        elif action == "failed_move":
+            reward -= 20.0 # 撞墙的惩罚
+        
+        elif isinstance(action, int):
+            # 核心：基于到目标距离变化的奖励
+            if next_event:
+                target_id = next_event.building_id
+                
+                # 移动前的距离
+                old_dist = graph.get_path_distance(state[0], target_id)
+                # 移动后的距离
+                new_dist = graph.get_path_distance(self.current_location.building_id, target_id)
+
+                if old_dist is not None and new_dist is not None:
+                    # 每向目标走近100米，就奖励10分
+                    reward += (old_dist - new_dist) / 10.0
+                
+                # 如果到达了正确的目的地
+                if self.current_location.building_id == target_id:
+                    # 准时或提前到达，给予巨大奖励
+                    if current_minutes <= next_event.start_minutes:
+                        reward += 100.0
+                    else: # 迟到，给予巨大惩罚
+                        reward -= 100.0
+            else:
+                # 没事做的时候乱走，轻微惩罚
+                reward -= 1.0
+
+        # --- 更新Q-Table ---
+        next_state = self.get_state(graph, current_minutes)
+        next_available_actions = list(range(len(self.current_location.paths))) + ["wait"] if self.state == "idle" else []
+        
+        self.agent.update(state, action, reward, next_state, next_available_actions)
+        
+        self.happiness += reward
+        self.last_state_action = None
+
+    def update(self, delta_time: float, current_minutes: float) -> None:
+        """只负责物理状态的推进。"""
+        if self.state != "moving":
+            return
+
+        time_to_spend = delta_time
+        if time_to_spend < self._travel_time_remaining:
+            self._travel_time_remaining -= time_to_spend
+        else:
+            self._travel_time_remaining = 0.0
+            if self._current_path.is_bridge and self.id in self._current_path.current_students:
+                self._current_path.current_students.remove(self.id)
             
-            # 🌉 Phase 3.2: Bridge queue management
-            if not segment.started and segment.path.is_bridge and segment.path.capacity is not None:
-                # Use queue system if queue_manager is available
-                if self._queue_manager is not None and not self.in_queue:
-                    # Check if we need to join queue
-                    if not segment.path.has_capacity():
-                        # Path is full, try to join queue
-                        # Note: We'll use a dummy current_time here, real time comes from simulation
-                        # This is a limitation - ideally we'd pass current_time to update()
-                        if self._queue_manager.can_enqueue(segment.path, self):
-                            # Join queue and wait
-                            # Actual enqueue will be handled by simulation
-                            self.state = "waiting"
-                            self._wait_time = 0.0
-                            return
-                        else:
-                            # Queue is full, try to reroute
-                            self.state = "waiting"
-                            self._wait_time = 0.0
-                            return
-                    # Path has capacity, proceed
-                else:
-                    # Fallback to old congestion check (for backward compatibility)
-                    occupancy_ratio = len(segment.path.current_students) / segment.path.capacity
-                    
-                    if occupancy_ratio >= self._congestion_threshold:
-                        # Bridge is too congested, switch to waiting state
-                        self.state = "waiting"
-                        self._wait_time = 0.0
-                        return
-            
-            before = remaining
-            remaining = segment.step(self.id, remaining)
-            if segment.remaining_time == 0.0:
-                self.current_location = segment.path.end
-                self._segments.pop(0)
-                self._current_segment_index = 0
-            if remaining == before:
-                break
-
-        if not self._segments:
-            self.state = "in_class" if self._active_event else "idle"
-            self.path_to_destination = [self.current_location]
-
-    def _clear_plan(self) -> None:
-        """Reset the current movement plan."""
-
-        for segment in self._segments:
-            if segment.started and self.id in segment.path.current_students:
-                segment.path.current_students.remove(self.id)
-        self._segments = []
-        self.path_to_destination = [self.current_location]
-        self._active_event = None
-        if self.state == "moving":
+            self.current_location = self._current_path.end
+            self._current_path = None
             self.state = "idle"
 
-    @property
-    def active_event(self) -> Optional[ScheduleEvent]:
-        """Return the event the student is currently targeting."""
-
-        return self._active_event
-    
-    def get_current_path_cost(self) -> float:
-        """Calculate the total cost (travel time + queue wait) of the current path.
-        
-        Phase 2: Now uses get_total_crossing_cost() to include queue wait times.
-        """
-        
-        if not self._segments:
-            return 0.0
-        
-        total_cost = 0.0
-        for segment in self._segments:
-            total_cost += segment.path.get_total_crossing_cost()
-        
-        return total_cost
-    
-    def get_alternative_path_cost(self) -> Optional[float]:
-        """Calculate the cost of the second-best alternative path to the current destination.
-        
-        Returns None if no alternative path exists or if not currently moving.
-        """
-        
-        if not self._last_graph or not self._active_event or not self.path_to_destination:
-            return None
-        
-        target_id = self._active_event.building_id
-        start_id = self.current_location.building_id
-        
-        if start_id == target_id:
-            return None
-        
-        try:
-            # Get current path for reference
-            current_cost, _ = self._last_graph.find_shortest_path(start_id, target_id)
-            
-            # Try to find second shortest path
-            second_cost = self._last_graph.find_second_shortest_path(start_id, target_id)
-            
-            return second_cost
-        except (ValueError, AttributeError):
-            return None
-    
-    def calculate_eta(self, current_time: float) -> Optional[float]:
-        """Calculate estimated time of arrival (ETA) at the current destination.
-        
-        Phase 5.1: Calculates ETA by summing remaining time in current segment
-        plus total crossing cost of all future segments.
-        
-        Args:
-            current_time: Current simulation time in minutes
-            
-        Returns:
-            Estimated arrival time in minutes, or None if not moving
-        """
-        if not self._segments or self.state != "moving":
-            return None
-        
-        # Start with current time
-        eta = current_time
-        
-        # Add remaining time in current segment
-        if self._segments:
-            eta += self._segments[0].remaining_time
-        
-        # Add cost of all future segments
-        for segment in self._segments[1:]:
-            eta += segment.path.get_total_crossing_cost()
-        
-        # Update the eta attribute
-        self.eta = eta
-        return eta
-    
-    def is_deadline_at_risk(self, current_time: float, threshold: float = 0.8) -> bool:
-        """Check if the student is at risk of missing their deadline.
-        
-        Phase 5.2: Compares ETA with deadline to determine if replanning is needed.
-        
-        Args:
-            current_time: Current simulation time in minutes
-            threshold: Risk threshold (0.0-1.0). 1.0 means only replan when ETA > deadline.
-                      0.8 means replan when buffer is reduced to 20% or less.
-            
-        Returns:
-            True if deadline is at risk, False otherwise
-        """
-        if self.deadline is None or not self._segments:
-            return False
-        
-        # Calculate current ETA
-        eta = self.calculate_eta(current_time)
-        if eta is None:
-            return False
-        
-        # Calculate time buffer remaining
-        time_to_deadline = self.deadline - current_time
-        time_needed = eta - current_time
-        
-        # Risk if: time_needed > time_to_deadline * threshold
-        # Example: threshold=0.8 means if we need 9 min but only have 10 min buffer,
-        # we're at risk (9 > 10*0.8 = 8)
-        return time_needed > time_to_deadline * threshold
-    
-    def replan_if_needed(self, current_time: float, graph: Graph, cooldown: float = 2.0) -> bool:
-        """Attempt to replan route if deadline is at risk.
-        
-        Phase 5.3: Proactive replanning to avoid missing deadlines.
-        Includes cooldown to prevent excessive replanning.
-        
-        Args:
-            current_time: Current simulation time in minutes
-            graph: Graph for pathfinding
-            cooldown: Minimum time (minutes) between replans
-            
-        Returns:
-            True if replanning was performed, False otherwise
-        """
-        # Check cooldown
-        if self.last_replan_time is not None:
-            time_since_replan = current_time - self.last_replan_time
-            if time_since_replan < cooldown:
-                return False  # Too soon to replan
-        
-        # Check if deadline is at risk
-        if not self.is_deadline_at_risk(current_time):
-            return False  # No need to replan
-        
-        # Need to replan - find alternative route
-        if not self._last_graph or not self._active_event:
-            return False  # No graph or destination
-        
-        target_id = self._active_event.building_id
-        start_id = self.current_location.building_id
-        
-        if start_id == target_id:
-            return False  # Already at destination
-        
-        try:
-            # Try to find an alternative (second shortest) path
-            second_cost = graph.find_second_shortest_path(start_id, target_id)
-            
-            # Check if alternative path would help
-            # (It might be worse due to current congestion)
-            current_cost = self.get_current_path_cost()
-            
-            # Only replan if alternative is actually better
-            # (considering current queue states)
-            if second_cost < current_cost:
-                # Clear current plan
-                self._clear_plan()
-                
-                # Find and set new route
-                # Note: find_shortest_path now returns the best path considering queues
-                # So we need to temporarily block current path to force alternative
-                # For simplicity, we'll just replan and trust the congestion-aware algorithm
-                total_time, route = graph.find_shortest_path(start_id, target_id)
-                
-                # Create new segments
-                segments: List[_Segment] = []
-                for start, end in zip(route, route[1:]):
-                    path = graph.get_path(start.building_id, end.building_id)
-                    segments.append(_Segment(path=path, remaining_time=path.get_travel_time()))
-                
-                self.state = "moving"
-                self.path_to_destination = route
-                self._segments = segments
-                self._current_segment_index = 0
-                self.last_replan_time = current_time
-                
-                return True
-        except ValueError:
-            # No alternative path available
-            return False
-        
-        return False
-    
+    # ... get_interpolated_position 和 _format_time 保持不变 ...
     def get_interpolated_position(self) -> Tuple[float, float]:
-        """Get the smooth interpolated position for animation using Manhattan-style paths."""
-        
-        if self.state != "moving" or not self._segments:
+        if self.state != "moving" or not self._current_path:
             return (float(self.current_location.x), float(self.current_location.y))
-        
-        # Get current segment
-        if self._current_segment_index >= len(self._segments):
-            return (float(self.current_location.x), float(self.current_location.y))
-        
-        segment = self._segments[self._current_segment_index]
-        
-        # Calculate progress (0.0 = start, 1.0 = end)
-        if segment.path.get_travel_time() > 0:
-            progress = 1.0 - (segment.remaining_time / segment.path.get_travel_time())
-        else:
-            progress = 1.0
-        
+        path = self._current_path
+        total_time = path.get_travel_time(self.base_speed)
+        progress = 1.0 - (self._travel_time_remaining / total_time) if total_time > 0 else 1.0
         progress = max(0.0, min(1.0, progress))
-        
-        # Get start and end positions
-        start_x = float(segment.path.start.x)
-        start_y = float(segment.path.start.y)
-        end_x = float(segment.path.end.x)
-        end_y = float(segment.path.end.y)
-        
-        # Manhattan-style movement: move horizontally first, then vertically
-        # This ensures students follow the grid-based road network
-        
-        if start_x == end_x or start_y == end_y:
-            # Straight path (already aligned) - simple linear interpolation
-            current_x = start_x + (end_x - start_x) * progress
-            current_y = start_y + (end_y - start_y) * progress
-        else:
-            # L-shaped path: horizontal then vertical
-            # Calculate total Manhattan distance
-            dx = abs(end_x - start_x)
-            dy = abs(end_y - start_y)
-            total_distance = dx + dy
-            
-            if total_distance > 0:
-                # Determine which portion of journey we're in
-                horizontal_distance = dx
-                traveled_distance = total_distance * progress
-                
-                if traveled_distance <= horizontal_distance:
-                    # Still moving horizontally
-                    horizontal_progress = traveled_distance / horizontal_distance if horizontal_distance > 0 else 1.0
-                    current_x = start_x + (end_x - start_x) * horizontal_progress
-                    current_y = start_y
-                else:
-                    # Moving vertically
-                    vertical_traveled = traveled_distance - horizontal_distance
-                    vertical_progress = vertical_traveled / dy if dy > 0 else 1.0
-                    current_x = end_x
-                    current_y = start_y + (end_y - start_y) * vertical_progress
-            else:
-                current_x = end_x
-                current_y = end_y
-        
-        return (current_x, current_y)
+        start_pos = (float(path.start.x), float(path.start.y))
+        end_pos = (float(path.end.x), float(path.end.y))
+        x = start_pos[0] + (end_pos[0] - start_pos[0]) * progress
+        y = start_pos[1] + (end_pos[1] - start_pos[1]) * progress
+        return (x, y)
 
+def _format_time(total_minutes: float) -> str:
+    minutes = int(total_minutes) % (24 * 60)
+    hour = minutes // 60
+    minute = minutes % 60
+    return f"{hour:02d}:{minute:02d}"
 
-__all__ = ["Student"]
+__all__ = ["Student", "Personality"]
