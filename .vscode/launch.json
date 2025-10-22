@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/launch.json",
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Simulation (start_simulation.py)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/start_simulation.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true
+    },
+    {
+      "name": "Run Main (src/main.py)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/src",
+      "justMyCode": true
+    },
+    {
+      "name": "Run Tests (unittest discover)",
+      "type": "python",
+      "request": "launch",
+      "module": "unittest",
+      "args": [
+        "-v",
+        "discover",
+        "-s",
+        "src/tests",
+        "-p",
+        "test_*.py"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

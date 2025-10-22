@@ -1,0 +1,13 @@
+{
+  "python.testing.unittestEnabled": true,
+  "python.testing.pytestEnabled": false,
+  "python.testing.unittestArgs": [
+    "-v",
+    "-s",
+    "src/tests",
+    "-p",
+    "test_*.py"
+  ],
+  // 使用工作区虚拟环境
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
