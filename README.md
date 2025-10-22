@@ -8,13 +8,13 @@
 ```
 game3/
 ├── src/
-│   ├── campus/           # 核心模拟模块
+│   ├── campus/           # 代码核心
 │   │   ├── graph.py      # 图数据结构和最短路径算法
 │   │   ├── schedule.py   # 课程表管理
 │   │   ├── student.py    # 学生代理
 │   │   └── simulation.py # 模拟引擎
 │   └── tests/            # 单元测试
-├── docs/                 # 文档
+├── docs/                 # 更新和要求之类的文档都存在这里
 ├── pyproject.toml        # 项目配置
 └── run.py          # 運行游戲
 └── test.py         # 測試子功能
