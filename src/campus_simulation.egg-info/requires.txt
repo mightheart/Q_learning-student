@@ -1,0 +1,4 @@
+pygame>=2.5.0
+
+[dev]
+pytest>=7.0

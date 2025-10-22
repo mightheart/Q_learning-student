@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: campus-simulation
+Version: 0.1.0
+Summary: Campus life simulation with student agents and pathfinding
+Requires-Python: >=3.11
+Requires-Dist: pygame>=2.5.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"

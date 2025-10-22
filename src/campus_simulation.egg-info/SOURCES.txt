@@ -1,0 +1,15 @@
+pyproject.toml
+src/campus/__init__.py
+src/campus/graph.py
+src/campus/schedule.py
+src/campus/simulation.py
+src/campus/student.py
+src/campus_simulation.egg-info/PKG-INFO
+src/campus_simulation.egg-info/SOURCES.txt
+src/campus_simulation.egg-info/dependency_links.txt
+src/campus_simulation.egg-info/requires.txt
+src/campus_simulation.egg-info/top_level.txt
+src/tests/__init__.py
+src/tests/test_graph.py
+src/tests/test_schedule_student.py
+src/tests/test_simulation.py
