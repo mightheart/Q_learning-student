@@ -197,11 +197,15 @@ def create_class_schedules() -> dict[str, Schedule]:
     
     # 定义通用时长
     CLASS_DURATION = 90      # 课程/自习时长：1.5小时
-    GYM_DURATION = 30        # 健身时长：30分钟
+    GYM_DURATION_1 = 20        # 健身时长：20分钟
+    GYM_DURATION_2 = 90        # 健身时长：90分钟
+    PLAYGROUND_DURATION = 60  #玩耍时间
     BREAKFAST_DURATION = 20  # 早餐时长
-    LUNCH_DURATION = 40      # 午餐时长
+    LUNCH_DURATION = 30      # 午餐时长
     DINNER_DURATION = 30     # 晚餐时长
-    
+    LIBRARY_DURATION_1 = 60 #图书馆时长
+    LIBRARY_DURATION_2 = 120 #图书馆时长
+    LIBRARY_DURATION_3 = 180 #图书馆时长
     # === Class 1: Computer Science ===
     cs_schedule = Schedule("CS Class 1")
     #cs_schedule.add_event("07:00", "D5a", 30)
@@ -209,12 +213,12 @@ def create_class_schedules() -> dict[str, Schedule]:
     cs_schedule.add_event("08:00", "D3a", CLASS_DURATION)
     cs_schedule.add_event("10:00", "D3b", CLASS_DURATION)
     cs_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
-    cs_schedule.add_event("12:40", "library", 80)
+    cs_schedule.add_event("12:40", "library", LIBRARY_DURATION_1)
     cs_schedule.add_event("14:00", "F3a", CLASS_DURATION)
     cs_schedule.add_event("16:00", "F3b", CLASS_DURATION)
     cs_schedule.add_event("18:00", "canteen", DINNER_DURATION)
-    cs_schedule.add_event("18:30", "library", 180)
-    cs_schedule.add_event("21:30", "D5a", 60)
+    cs_schedule.add_event("18:40", "library", LIBRARY_DURATION_2)
+    cs_schedule.add_event("21:30", "D5a", 90)
     schedules["CS1"] = cs_schedule
     
     # === Class 2: Mathematics ===
@@ -224,11 +228,11 @@ def create_class_schedules() -> dict[str, Schedule]:
     math_schedule.add_event("08:20", "F3c", CLASS_DURATION)
     math_schedule.add_event("10:10", "F3d", CLASS_DURATION)
     math_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
-    math_schedule.add_event("12:40", "playground", 80)
+    math_schedule.add_event("12:40", "playground", LIBRARY_DURATION_1)
     math_schedule.add_event("14:00", "library", CLASS_DURATION)
     math_schedule.add_event("16:00", "D3c", CLASS_DURATION)
-    math_schedule.add_event("18:00", "canteen", DINNER_DURATION + 10)
-    math_schedule.add_event("18:40", "library", 200)
+    math_schedule.add_event("18:00", "canteen", DINNER_DURATION)
+    math_schedule.add_event("18:40", "library", LIBRARY_DURATION_3)
     math_schedule.add_event("22:00", "D5b", 60)
     schedules["MATH"] = math_schedule
     
@@ -239,13 +243,13 @@ def create_class_schedules() -> dict[str, Schedule]:
     physics_schedule.add_event("08:10", "D3d", CLASS_DURATION)
     physics_schedule.add_event("10:00", "F3a", CLASS_DURATION)
     physics_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
-    physics_schedule.add_event("12:40", "D5c", 80)
-    physics_schedule.add_event("14:00", "library", CLASS_DURATION)
-    physics_schedule.add_event("15:30", "gym", GYM_DURATION)
-    physics_schedule.add_event("17:30", "playground", 30)
+    physics_schedule.add_event("12:40", "D5c", LIBRARY_DURATION_1)
+    physics_schedule.add_event("14:00", "library", LIBRARY_DURATION_1)
+    physics_schedule.add_event("15:30", "gym", GYM_DURATION_2)
+    physics_schedule.add_event("17:30", "playground", GYM_DURATION_1)
     physics_schedule.add_event("18:00", "canteen", DINNER_DURATION)
-    physics_schedule.add_event("18:30", "library", 150)
-    physics_schedule.add_event("21:00", "D5c", 60)
+    physics_schedule.add_event("18:40", "library", LIBRARY_DURATION_2)
+    physics_schedule.add_event("21:00", "D5c", 120)
     schedules["PHYS"] = physics_schedule
     
     # === Class 4: English ===
@@ -255,12 +259,12 @@ def create_class_schedules() -> dict[str, Schedule]:
     english_schedule.add_event("08:15", "F3b", CLASS_DURATION)
     english_schedule.add_event("10:10", "library", CLASS_DURATION)
     english_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
-    english_schedule.add_event("12:40", "playground", 80)
+    english_schedule.add_event("12:40", "playground", PLAYGROUND_DURATION)
     english_schedule.add_event("14:00", "D3b", CLASS_DURATION)
     english_schedule.add_event("16:00", "D3c", CLASS_DURATION)
     english_schedule.add_event("18:00", "canteen", DINNER_DURATION)
-    english_schedule.add_event("18:30", "library", 120)
-    english_schedule.add_event("20:30", "D5d", 60)
+    english_schedule.add_event("18:40", "library", LIBRARY_DURATION_2)
+    english_schedule.add_event("21:00", "D5d", 120)
     schedules["ENG"] = english_schedule
     
     # === Class 5: Chemistry ===
@@ -270,13 +274,13 @@ def create_class_schedules() -> dict[str, Schedule]:
     chem_schedule.add_event("08:00", "F3d", CLASS_DURATION)
     chem_schedule.add_event("10:00", "D3a", CLASS_DURATION)
     chem_schedule.add_event("12:00", "canteen", LUNCH_DURATION)
-    chem_schedule.add_event("12:30", "library", 90)
+    chem_schedule.add_event("12:40", "library", LIBRARY_DURATION_1)
     chem_schedule.add_event("14:00", "F3c", CLASS_DURATION)
     chem_schedule.add_event("16:00", "library", CLASS_DURATION)
-    chem_schedule.add_event("18:00", "canteen", DINNER_DURATION)
-    chem_schedule.add_event("18:30", "gym", GYM_DURATION)
-    chem_schedule.add_event("19:00", "library", 150)
-    chem_schedule.add_event("21:30", "D5a", 60)
+    chem_schedule.add_event("17:50", "canteen", DINNER_DURATION)
+    chem_schedule.add_event("18:30", "gym", GYM_DURATION_2)
+    chem_schedule.add_event("19:00", "library", LIBRARY_DURATION_2)
+    chem_schedule.add_event("21:30", "D5a", 90)
     schedules["CHEM"] = chem_schedule
     
     return schedules

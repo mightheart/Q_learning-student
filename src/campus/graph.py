@@ -112,38 +112,40 @@ class Graph:
         self._distance_matrix = None # 连接新路径后，距离缓存失效
         return forward
 
-    def find_shortest_path(
-        self, start_id: str, end_id: str, base_speed: float = 80.0
-    ) -> Optional[List[Building]]:
-        """
-        使用Dijkstra算法寻找考虑当前拥塞的【最快】路径。
-        返回一个建筑列表作为路径，如果找不到路径则返回None。
-        """
-        start_node = self._require_building(start_id)
-        pq = [(0, start_node.building_id, [start_node])]
-        min_costs = {start_node.building_id: 0}
+    # --- 以下函数可以被安全删除 ---
+    # def find_shortest_path(
+    #     self, start_id: str, end_id: str, base_speed: float = 80.0
+    # ) -> Optional[List[Building]]:
+    #     """
+    #     使用Dijkstra算法寻找考虑当前拥塞的【最快】路径。
+    #     返回一个建筑列表作为路径，如果找不到路径则返回None。
+    #     """
+    #     start_node = self._require_building(start_id)
+    #     pq = [(0, start_node.building_id, [start_node])]
+    #     min_costs = {start_node.building_id: 0}
         
-        while pq:
-            cost, current_id, path_list = heapq.heappop(pq)
+    #     while pq:
+    #         cost, current_id, path_list = heapq.heappop(pq)
 
-            if cost > min_costs.get(current_id, float('inf')):
-                continue
+    #         if cost > min_costs.get(current_id, float('inf')):
+    #             continue
 
-            if current_id == end_id:
-                return path_list
+    #         if current_id == end_id:
+    #             return path_list
 
-            current_building = self.buildings[current_id]
-            for path_edge in current_building.paths:
-                neighbor_id = path_edge.end.building_id
-                travel_time = path_edge.get_travel_time(base_speed)
-                new_cost = cost + travel_time
+    #         current_building = self.buildings[current_id]
+    #         for path_edge in current_building.paths:
+    #             neighbor_id = path_edge.end.building_id
+    #             travel_time = path_edge.get_travel_time(base_speed)
+    #             new_cost = cost + travel_time
 
-                if new_cost < min_costs.get(neighbor_id, float('inf')):
-                    min_costs[neighbor_id] = new_cost
-                    new_path_list = path_list + [path_edge.end]
-                    heapq.heappush(pq, (new_cost, neighbor_id, new_path_list))
+    #             if new_cost < min_costs.get(neighbor_id, float('inf')):
+    #                 min_costs[neighbor_id] = new_cost
+    #                 new_path_list = path_list + [path_edge.end]
+    #                 heapq.heappush(pq, (new_cost, neighbor_id, new_path_list))
 
-        return None
+    #     return None
+    # --- 删除结束 ---
 
     def get_path_distance(self, start_id: str, end_id: str) -> Optional[float]:
         """

@@ -8,6 +8,7 @@ from campus import (
     Simulation,
     SimulationClock,
     Student,
+    QLearningAgent, # <-- 1. 导入 QLearningAgent
     create_campus_map,
     create_class_schedules,
 )
@@ -65,11 +66,15 @@ def main() -> None:
             student_id = f"{class_code}-{student_num:03d}"
             start_building = graph.get_building(dorm_id)
             
+            # 2. 创建 agent
+            agent = QLearningAgent(actions=[]) # actions 列表可以为空，因为学生决策时会动态生成
+            
             student = Student(
                 student_id=student_id,
                 class_name=schedule.class_name,
                 schedule=schedule,
                 start_building=start_building,
+                agent=agent, # <-- 3. 传入 agent
             )
 
             # --- 新增：将加载的“大脑”注入学生 ---

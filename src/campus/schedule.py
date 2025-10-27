@@ -23,7 +23,12 @@ class ScheduleEvent:
 
     time_str: str
     building_id: str
-    duration: int  # 新增：事件的持续时间（分钟）
+    duration: int
+
+    @property
+    def id(self) -> str:
+        """返回事件的唯一标识符，例如 '08:00-D3a'。"""
+        return f"{self.time_str}-{self.building_id}"
 
     @property
     def start_minutes(self) -> int:

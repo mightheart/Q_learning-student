@@ -1,9 +1,8 @@
-"""学生智能体实现，使用Q-learning进行智能决策。(最终版：采用Reward Shaping)"""
+"""学生智能体实现，使用Q-learning进行智能决策。(V3.0：引入'attending'状态)"""
 
 from __future__ import annotations
 
 import random
-import json
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -17,12 +16,12 @@ class Personality:
     risk_aversion: float = field(default_factory=lambda: random.uniform(0.5, 1.5))
 
 class QLearningAgent:
-    def __init__(self, actions: List[Any]):
+    def __init__(self, actions: List[Any] = None, exploration_rate: float = 0.1):
         self.q_table: Dict[Any, Dict[Any, float]] = {}
-        self.actions = actions
+        self.actions = actions if actions is not None else []
         self.learning_rate: float = 0.1
         self.discount_factor: float = 0.9
-        self.exploration_rate: float = 0.1
+        self.exploration_rate: float = exploration_rate
 
     def get_q_value(self, state: Any, action: Any) -> float:
         return self.q_table.get(state, {}).get(action, 0.0)
@@ -38,7 +37,7 @@ class QLearningAgent:
         self.q_table[state][action] = new_value
 
 class Student:
-    """代表一个由Q-learning驱动的学生智能体。"""
+    """代表一个由Q-learning驱动的学生智能体，拥有'idle', 'moving', 'attending'三种状态。"""
 
     def __init__(
         self,
@@ -46,32 +45,42 @@ class Student:
         class_name: str,
         schedule: Schedule,
         start_building: Building,
+        agent: QLearningAgent,
     ) -> None:
         self.id = student_id
         self.class_name = class_name
         self.schedule = schedule
         self.current_location: Building = start_building
-        self.state: str = "idle"
+        self.state: str = "idle"  # 状态可以是: "idle", "moving", "attending"
 
         self.personality = Personality()
         self.happiness: float = 100.0
         self.base_speed: float = 80.0
-        self.agent = QLearningAgent(actions=[])
-
+        self.agent = agent
+        self.last_state_action: Optional[Tuple[Any, Any]] = None
+        
+        # --- 新增：用于防止重复获取到达奖励的状态锁 ---
+        self._prepared_for_event_id: Optional[str] = None
+        
+        # 内部状态变量
         self._current_path: Optional[Path] = None
         self._travel_time_remaining: float = 0.0
-        
-        # 简化：last_state_action 只存储状态和动作
-        self.last_state_action: Optional[Tuple[Any, Any]] = None
+
+    def reset(self, start_building: Building) -> None:
+        self.current_location = start_building
+        self.state = "idle"
+        self.happiness = 100.0
+        self.last_state_action = None
+        self._prepared_for_event_id = None # <-- 在重置时也清空
+        self._current_path = None
+        self._travel_time_remaining = 0.0
 
     def get_state(self, graph: Graph, current_minutes: float) -> Any:
         """构建当前状态，用于Q-learning决策。"""
         next_event = self.schedule.get_next_event(_format_time(current_minutes))
         
-        # 统一状态表示法
         if not next_event:
-            # 如果没有下一个事件，目标就是宿舍("Dorm")，且时间充裕(2)
-            target_building_id = "Dorm"
+            target_building_id = "Dorm" # 假设宿舍是最终目标
             deadline_bucket = 2
         else:
             target_building_id = next_event.building_id
@@ -88,13 +97,26 @@ class Student:
         )
 
     def decide_and_act(self, graph: Graph, current_minutes: float):
-        """决策逻辑：不再需要“老师”，AI可以完全自主学习。"""
+        """决策逻辑：在特定条件下增加'attend_event'动作。"""
         if self.state != "idle":
             return
 
         current_state = self.get_state(graph, current_minutes)
+        
+        # 1. 确定所有可用动作
         available_actions = list(range(len(self.current_location.paths))) + ["wait"]
         
+        # 检查是否可以添加 "attend_event" 动作
+        event_to_attend = self.schedule.get_current_event(_format_time(current_minutes))
+        if not event_to_attend:
+            next_event = self.schedule.get_next_event(_format_time(current_minutes))
+            if next_event and (next_event.start_minutes - current_minutes) <= 5:
+                event_to_attend = next_event
+        
+        if event_to_attend and self.current_location.building_id == event_to_attend.building_id:
+            available_actions.append("attend_event")
+
+        # 2. Epsilon-Greedy 决策
         action = None
         if random.random() < self.agent.exploration_rate:
             action = random.choice(available_actions)
@@ -106,20 +128,23 @@ class Student:
                 action = random.choice(best_actions)
 
         if action is None:
-            action = random.choice(available_actions)
+            action = "wait" # 如果没有最佳动作，默认等待
 
-        # 存储决策，以便 learn() 方法计算奖励
+        # 3. 执行动作并更新状态
         self.last_state_action = (current_state, action)
 
-        if action == "wait":
-            # 等待动作在 learn() 中处理
+        if action == "attend_event":
+            self.state = "attending"
+        elif action == "wait":
             self.state = "idle"
         elif isinstance(action, int):
             chosen_path = self.current_location.paths[action]
             if chosen_path.is_bridge and not chosen_path.has_capacity():
-                # 撞墙的惩罚在 learn() 中处理
-                self.last_state_action = (current_state, "failed_move")
+                # 桥满了，视为排队等待，下一帧重新决策
+                self.last_state_action = (current_state, "queue_wait")
+                self.state = "idle"
             else:
+                # 正常移动
                 self.state = "moving"
                 self._current_path = chosen_path
                 self._travel_time_remaining = chosen_path.get_travel_time(self.base_speed)
@@ -127,7 +152,7 @@ class Student:
                     self._current_path.current_students.append(self.id)
 
     def learn(self, graph: Graph, current_minutes: float):
-        """根据行动结果计算奖励并更新Q-Table，明确奖励“在岗”行为。"""
+        """重构后的学习逻辑，围绕新状态和规则。"""
         if not self.last_state_action:
             return
 
@@ -135,92 +160,89 @@ class Student:
         reward = 0.0
         p = self.personality
 
-        # --- 核心修改：区分“在岗等待”和“普通等待” ---
-        current_event = self.schedule.get_current_event(_format_time(current_minutes))
-        next_event = self.schedule.get_next_event(_format_time(current_minutes))
+        time_str = _format_time(current_minutes)
+        current_event = self.schedule.get_current_event(time_str)
+        next_event = self.schedule.get_next_event(time_str)
 
-        if action == "wait":
-            # 1. 检查是否为“在岗等待”
-            if current_event and self.current_location.building_id == current_event.building_id:
-                # 在正确的时间、正确的地点等待，这是非常好的行为！
-                # 给予一个持续的、显著的正奖励。
-                reward += 20.0 
+        # --- 新增：当下一个事件变化时，重置准备状态 ---
+        if next_event and self._prepared_for_event_id != next_event.id:
+            self._prepared_for_event_id = None
+
+        # --- 核心奖励逻辑 ---
+        if action == "attend_event":
+            reward += 25.0 # 参与活动，获得持续高额奖励
+        
+        elif action == "queue_wait":
+            reward += 5.0 * p.patience # 排队等待，获得耐心奖励
+
+        elif action == "wait":
+            # 只有在没事做的时候等待才加分
+            if not current_event and (not next_event or next_event.start_minutes - current_minutes > 30):
+                reward += 1.0 * p.patience
             else:
-                # 2. 否则，是“普通等待”（在路上或没事做时等待）
-                if not next_event or (next_event.start_minutes - current_minutes > 15):
-                    # 时间充裕，耐心越高，等待的奖励越高
-                    reward += 1.0 * p.patience
-                else:
-                    # 时间紧迫，耐心越低，等待的惩罚越重
-                    reward -= 10.0 / max(p.patience, 0.1)
+                # 在紧迫的时候等待，扣分
+                reward -= 10.0 / max(p.patience, 0.1)
         
-        elif action == "failed_move":
-            # 撞墙（遇到拥堵）的惩罚受“风险厌恶”影响
-            reward -= 20.0 * p.risk_aversion
-        
-        elif isinstance(action, int):
-            # 移动行为的奖励逻辑
-            if next_event:
+        elif isinstance(action, int): # 移动
+            # 关键规则：只有在当前没有活动时，才计算“距离减少”的奖励
+            if not current_event and next_event:
                 target_id = next_event.building_id
                 old_dist = graph.get_path_distance(state[0], target_id)
                 new_dist = graph.get_path_distance(self.current_location.building_id, target_id)
-
                 if old_dist is not None and new_dist is not None:
-                    # 修改：大幅降低“距离减少”奖励的权重，让它只起到引导作用
-                    reward += (old_dist - new_dist) / 50.0
-                
-                if self.current_location.building_id == target_id:
-                    if current_minutes <= next_event.start_minutes:
-                        reward += 100.0
-                    else: 
-                        reward -= 100.0 * p.risk_aversion
-            else:
-                reward -= 1.0 * p.risk_aversion
+                    reward += (old_dist - new_dist) / 100.0
+            
+            # --- 修改：加入状态锁，防止重复刷分 ---
+            # 到达奖励（只在移动后检查）
+            if next_event and self.current_location.building_id == next_event.building_id:
+                # 只有在尚未“准备好”的情况下才给予到达奖励
+                if self._prepared_for_event_id != next_event.id:
+                    time_to_event = next_event.start_minutes - current_minutes
+                    if 0 <= time_to_event <= 5:
+                        reward += 100.0 # 完美守时
+                        self._prepared_for_event_id = next_event.id # 加锁
+                    elif time_to_event > 5:
+                        reward += 30.0 # 提前到达
+                        self._prepared_for_event_id = next_event.id # 加锁
+                    # 注意：迟到惩罚在 update 方法中通过旷课惩罚实现
 
         # --- 更新Q-Table ---
         next_state = self.get_state(graph, current_minutes)
-        next_available_actions = list(range(len(self.current_location.paths))) + ["wait"] if self.state == "idle" else []
-        
+        # 下一轮的可用动作在下一帧的 decide_and_act 中计算，这里简化
+        next_available_actions = list(range(len(self.current_location.paths))) + ["wait", "attend_event"]
         self.agent.update(state, action, reward, next_state, next_available_actions)
-        
         self.happiness += reward
         self.last_state_action = None
 
     def update(self, delta_time: float, current_minutes: float) -> None:
-        """
-        推进物理状态，并根据是否旷课施加严厉的持续性惩罚。
-        """
-        # --- 新增：旷课惩罚逻辑 ---
+        """推进物理状态，并管理状态转换和持续性惩罚。"""
         current_event = self.schedule.get_current_event(_format_time(current_minutes))
-        
-        # 检查是否需要施加惩罚
-        is_truant = (
-            current_event and 
-            self.current_location.building_id != current_event.building_id
-        )
 
+        # 1. 状态转换逻辑
+        if self.state == "attending" and not current_event:
+            # 如果正在活动，但活动时间已过，则自动变为空闲
+            self.state = "idle"
+        
+        # 2. 持续性惩罚逻辑 (旷课)
+        # 如果当前有活动，但学生状态不是'attending'，则为旷课
+        is_truant = current_event and self.state != "attending"
         if is_truant:
-            # 如果当前有课/活动，但学生不在指定地点，则持续扣分。
-            # delta_time 保证了惩罚与“旷课”时长成正比。
-            # -50.0 是一个可调整的惩罚系数，值越大惩罚越严厉。
-            penalty = -50.0 * delta_time 
+            penalty = -50.0 * delta_time * self.personality.risk_aversion
             self.happiness += penalty
 
-        # --- 原有的移动逻辑保持不变 ---
-        if self.state != "moving":
-            return
-
-        time_to_spend = delta_time
-        if time_to_spend < self._travel_time_remaining:
-            self._travel_time_remaining -= time_to_spend
-        else:
-            self._travel_time_remaining = 0.0
-            if self._current_path.is_bridge and self.id in self._current_path.current_students:
-                self._current_path.current_students.remove(self.id)
+        # 3. 物理移动逻辑
+        if self.state == "moving":
+            if self._travel_time_remaining > 0:
+                self._travel_time_remaining -= delta_time
             
-            self.current_location = self._current_path.end
-            self._current_path = None
-            self.state = "idle"
+            if self._travel_time_remaining <= 0:
+                self._travel_time_remaining = 0.0
+                if self._current_path.is_bridge and self.id in self._current_path.current_students:
+                    self._current_path.current_students.remove(self.id)
+                
+                self.current_location = self._current_path.end
+                self._current_path = None
+                self.state = "idle" # 到达后变为空闲，准备做新决策
 
     def get_interpolated_position(self) -> Tuple[float, float]:
         if self.state != "moving" or not self._current_path:
@@ -241,4 +263,4 @@ def _format_time(total_minutes: float) -> str:
     minute = minutes % 60
     return f"{hour:02d}:{minute:02d}"
 
-__all__ = ["Student", "Personality"]
+__all__ = ["Student", "Personality", "QLearningAgent"]

@@ -16,6 +16,7 @@ from campus import (
     Simulation,
     SimulationClock,
     Student,
+    QLearningAgent,  # 1. 新增导入 QLearningAgent
     create_campus_map,
     create_class_schedules,
 )
@@ -53,8 +54,11 @@ def run_training():
         for i in range(STUDENTS_PER_CLASS):
             # 修正：学生ID格式化，以匹配main.py
             student_id = f"{class_code}-{i:03d}"
-            student = Student(student_id, schedule.class_name, schedule, start_building)
-            student.agent.exploration_rate = EPSILON_START
+            
+            # 2. 先创建 agent，再创建 student
+            agent = QLearningAgent(exploration_rate=EPSILON_START)
+            student = Student(student_id, schedule.class_name, schedule, start_building, agent)
+            
             students.append(student)
 
     print(f"Created {len(students)} students for training.")
@@ -65,15 +69,12 @@ def run_training():
         clock = SimulationClock(start_time=SIM_START_TIME, time_scale=TIME_SCALE)
         simulation = Simulation(graph, clock)
         
-        # Reset students to their dorms and reset happiness, but keep their learned brains!
+        # 优化：调用学生自身的 reset 方法，确保所有状态都被正确重置
         for student in students:
             class_code = student.id.split('-')[0]
             dorm_id = class_dorm_mapping.get(class_code, "D5a")
-            student.current_location = graph.get_building(dorm_id)
-            student.state = "idle"
-            student.happiness = 100.0
-            student._current_path = None
-            # student._active_event = None # <--- 已删除此行错误代码
+            start_building = graph.get_building(dorm_id)
+            student.reset(start_building) # <-- 直接调用 reset 方法
 
         simulation.add_students(students)
         

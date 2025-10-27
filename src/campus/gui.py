@@ -18,7 +18,7 @@ COLORS = {
     "path": (200, 200, 200),
     "student_idle": (100, 200, 100),
     "student_moving": (255, 200, 50),
-    "student_in_class": (200, 100, 200),
+    "student_attending": (200, 100, 200), # <-- 修改这里
     "panel_bg": (50, 50, 50),
     "panel_text": (255, 255, 255),
     "button": (70, 130, 180),
@@ -157,8 +157,8 @@ class CampusGUI:
                 color = COLORS["student_idle"]
             elif student.state == "moving":
                 color = COLORS["student_moving"]
-            else:  # in_class
-                color = COLORS["student_in_class"]
+            else:  # attending
+                color = COLORS["student_attending"] # <-- 修改这里
             
             pos_x, pos_y = student.get_interpolated_position()
             pos = (int(pos_x), int(pos_y))
@@ -218,8 +218,8 @@ class CampusGUI:
             total = len(self.simulation.students)
             idle = sum(1 for s in self.simulation.students if s.state == "idle")
             moving = sum(1 for s in self.simulation.students if s.state == "moving")
-            in_class = sum(1 for s in self.simulation.students if s.state == "in_class")
-            stats_text = f"Students: {total} | Idle: {idle} | Moving: {moving} | In Class: {in_class}"
+            attending = sum(1 for s in self.simulation.students if s.state == "attending") # <-- 修改这里
+            stats_text = f"Students: {total} | Idle: {idle} | Moving: {moving} | Attending: {attending}" # <-- 修改这里
             stats_surface = self.small_font.render(stats_text, True, COLORS["panel_text"])
             self.screen.blit(stats_surface, (20, 80))
 
